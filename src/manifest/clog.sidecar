@@ -9978,6 +9978,13 @@
       ],
       "macroName": "QuicTraceLogConnInfo"
     },
+    "RouteNotResolved": {
+      "ModuleProperites": {},
+      "TraceString": "[ xdp][tx  ] Route not resolved, dropping TX",
+      "UniqueId": "RouteNotResolved",
+      "splitArgs": [],
+      "macroName": "QuicTraceLogVerbose"
+    },
     "RouteResolutionEnd": {
       "ModuleProperites": {},
       "TraceString": "[conn][%p] Route resolution completed on Path[%hhu] with L2 address %hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
@@ -16841,6 +16848,11 @@
         "UniquenessHash": "dfd165b7-db65-59a6-211e-8df812cc6524",
         "TraceID": "Restart",
         "EncodingString": "[conn][%p] Restart (CompleteReset=%hhu)"
+      },
+      {
+        "UniquenessHash": "96d4eacb-ecd2-20a2-8106-b169ad4fcfa0",
+        "TraceID": "RouteNotResolved",
+        "EncodingString": "[ xdp][tx  ] Route not resolved, dropping TX"
       },
       {
         "UniquenessHash": "9bc1fa4d-99a3-dcfe-2650-d4effac253ba",

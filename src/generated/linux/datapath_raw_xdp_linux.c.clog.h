@@ -460,6 +460,22 @@ tracepoint(CLOG_DATAPATH_RAW_XDP_LINUX_C, XdpSetIfnameFails , arg2, arg3);\
 
 
 /*----------------------------------------------------------
+// Decoder Ring for RouteNotResolved
+// [ xdp][tx  ] Route not resolved, dropping TX
+// QuicTraceLogVerbose(
+            RouteNotResolved,
+            "[ xdp][tx  ] Route not resolved, dropping TX");
+----------------------------------------------------------*/
+#ifndef _clog_2_ARGS_TRACE_RouteNotResolved
+#define _clog_2_ARGS_TRACE_RouteNotResolved(uniqueId, encoded_arg_string)\
+tracepoint(CLOG_DATAPATH_RAW_XDP_LINUX_C, RouteNotResolved );\
+
+#endif
+
+
+
+
+/*----------------------------------------------------------
 // Decoder Ring for FailTxAlloc
 // [ xdp][tx  ] OOM for Tx
 // QuicTraceLogVerbose(

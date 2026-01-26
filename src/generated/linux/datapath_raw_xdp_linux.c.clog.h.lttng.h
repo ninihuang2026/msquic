@@ -480,6 +480,22 @@ TRACEPOINT_EVENT(CLOG_DATAPATH_RAW_XDP_LINUX_C, XdpSetIfnameFails,
 
 
 /*----------------------------------------------------------
+// Decoder Ring for RouteNotResolved
+// [ xdp][tx  ] Route not resolved, dropping TX
+// QuicTraceLogVerbose(
+            RouteNotResolved,
+            "[ xdp][tx  ] Route not resolved, dropping TX");
+----------------------------------------------------------*/
+TRACEPOINT_EVENT(CLOG_DATAPATH_RAW_XDP_LINUX_C, RouteNotResolved,
+    TP_ARGS(
+), 
+    TP_FIELDS(
+    )
+)
+
+
+
+/*----------------------------------------------------------
 // Decoder Ring for FailTxAlloc
 // [ xdp][tx  ] OOM for Tx
 // QuicTraceLogVerbose(
