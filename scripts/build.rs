@@ -49,7 +49,8 @@ fn cmake_build() {
     } else if cfg!(feature = "openssl") {
         config.define("QUIC_TLS_LIB", "openssl");
     } else if cfg!(feature = "openssl-external") {
-        config.define("QUIC_TLS_LIB", "openssl")
+        config
+            .define("QUIC_TLS_LIB", "openssl")
             .define("QUIC_USE_EXTERNAL_OPENSSL", "on");
         if let Ok(openssl_dir) = std::env::var("OPENSSL_DIR") {
             config.define("QUIC_OPENSSL_DIR", openssl_dir);
