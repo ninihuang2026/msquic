@@ -48,7 +48,7 @@ fn cmake_build() {
         config.define("QUIC_TLS_LIB", "quictls");
     } else if cfg!(feature = "openssl") {
         config.define("QUIC_TLS_LIB", "openssl");
-    } else if cfg!(feature = "openssl-external") {
+    } else if cfg!(feature = "openssl_external") {
         config
             .define("QUIC_TLS_LIB", "openssl")
             .define("QUIC_USE_EXTERNAL_OPENSSL", "on");
