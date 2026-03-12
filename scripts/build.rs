@@ -29,9 +29,11 @@ fn cmake_build() {
     let target = env::var("TARGET").unwrap().replace("\\", "/");
     let out_dir = env::var("OUT_DIR").unwrap().replace("\\", "/");
     // The output directory for the native MsQuic library.
-    let libdir = "/lib";
-    let full_out_dir = [out_dir, libdir.to_string()].join("");
-    let quic_output_dir = Path::new(&full_out_dir);
+    let quic_output_dir = if cfg!(windows) {
+        Path::new(&out_dir).join("lib")
+    } else {
+        Path::new(&out_dir).join("artifacts")
+    };
 
     // Builds the native MsQuic and installs it into $OUT_DIR.
     let mut config = Config::new(".");
@@ -54,8 +56,8 @@ fn cmake_build() {
         config
             .define("QUIC_TLS_LIB", "openssl")
             .define("QUIC_USE_EXTERNAL_OPENSSL", "on");
-        if let Ok(openssl_dir) = std::env::var("OPENSSL_DIR") {
-            config.define("QUIC_OPENSSL_DIR", openssl_dir);
+        if let Ok(openssl_dir) = std::env::var("OPENSSL_ROOT_DIR") {
+            config.define("QUIC_OPENSSL_ROOT_DIR", openssl_dir);
         } else {
             if let Ok(openssl_include_dir) = std::env::var("OPENSSL_INCLUDE_DIR") {
                 config.define("QUIC_OPENSSL_INCLUDE_DIR", openssl_include_dir);
