@@ -32,7 +32,7 @@ fn cmake_build() {
     let libdir = "/lib";
     let full_out_dir = [out_dir, libdir.to_string()].join("");
     let quic_output_dir = Path::new(&full_out_dir);
-    
+
     // Builds the native MsQuic and installs it into $OUT_DIR.
     let mut config = Config::new(".");
     config
