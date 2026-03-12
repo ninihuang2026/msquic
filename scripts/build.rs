@@ -50,20 +50,20 @@ fn cmake_build() {
         config.define("QUIC_TLS_LIB", "quictls");
     } else if cfg!(feature = "openssl") {
         config.define("QUIC_TLS_LIB", "openssl");
-    // } else if cfg!(feature = "openssl_external") {
-    //     config
-    //         .define("QUIC_TLS_LIB", "openssl")
-    //         .define("QUIC_USE_EXTERNAL_OPENSSL", "on");
-    //     if let Ok(openssl_dir) = std::env::var("OPENSSL_DIR") {
-    //         config.define("QUIC_OPENSSL_DIR", openssl_dir);
-    //     } else {
-    //         if let Ok(openssl_include_dir) = std::env::var("OPENSSL_INCLUDE_DIR") {
-    //             config.define("QUIC_OPENSSL_INCLUDE_DIR", openssl_include_dir);
-    //         }
-    //         if let Ok(openssl_lib_dir) = std::env::var("OPENSSL_LIB_DIR") {
-    //             config.define("QUIC_OPENSSL_LIB_DIR", openssl_lib_dir);
-    //         }
-    //     }
+    } else if cfg!(feature = "openssl_external") {
+        config
+            .define("QUIC_TLS_LIB", "openssl")
+            .define("QUIC_USE_EXTERNAL_OPENSSL", "on");
+        if let Ok(openssl_dir) = std::env::var("OPENSSL_DIR") {
+            config.define("QUIC_OPENSSL_DIR", openssl_dir);
+        } else {
+            if let Ok(openssl_include_dir) = std::env::var("OPENSSL_INCLUDE_DIR") {
+                config.define("QUIC_OPENSSL_INCLUDE_DIR", openssl_include_dir);
+            }
+            if let Ok(openssl_lib_dir) = std::env::var("OPENSSL_LIB_DIR") {
+                config.define("QUIC_OPENSSL_LIB_DIR", openssl_lib_dir);
+            }
+        }
     } else if cfg!(windows) {
         config.define("QUIC_TLS_LIB", "schannel");
     } else {
