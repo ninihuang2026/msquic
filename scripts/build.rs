@@ -29,8 +29,10 @@ fn cmake_build() {
     let target = env::var("TARGET").unwrap().replace("\\", "/");
     let out_dir = env::var("OUT_DIR").unwrap().replace("\\", "/");
     // The output directory for the native MsQuic library.
-    let quic_output_dir = Path::new(&out_dir).join("artifacts");
-
+    let libdir = "/lib";
+    let full_out_dir = [out_dir, libdir.to_string()].join("");
+    let quic_output_dir = Path::new(&full_out_dir);
+    
     // Builds the native MsQuic and installs it into $OUT_DIR.
     let mut config = Config::new(".");
     config
