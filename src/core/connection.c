@@ -613,7 +613,6 @@ QuicConnQMuxFree(
         QuicTimerWheelRemoveConnection(&Connection->Worker->TimerWheel, Connection);
         QuicOperationQueueClear(&Connection->OperQ, Partition);
     }
-    CxPlatDispatchLockUninitialize(&Connection->ReceiveQueueLock);
     QuicOperationQueueUninitialize(&Connection->OperQ);
     QuicStreamSetUninitialize(&Connection->Streams);
     QuicSendBufferUninitialize(&Connection->SendBuffer);
