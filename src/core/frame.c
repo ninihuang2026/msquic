@@ -1686,7 +1686,7 @@ QxTransportParametersFrameEncode(
     Buffer = Buffer + *Offset;
     Buffer = QuicVarIntEncode(QX_FRAME_TRANSPORT_PARAMETERS, Buffer);
     Buffer = QuicVarIntEncode(Frame->Length, Buffer);
-    CxPlatCopyMemory(Buffer, Frame->TP, Frame->Length);
+    CxPlatCopyMemory(Buffer, Frame->TP, (size_t)Frame->Length);
     *Offset += RequiredLength;
 
     return TRUE;
