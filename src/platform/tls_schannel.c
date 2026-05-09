@@ -2947,7 +2947,15 @@ CxPlatTlsHandshake(
         "Handshake not supported in kernel mode");
     return CXPLAT_TLS_RESULT_ERROR;
 #else
-    UNREFERENCED_PARAMETER(DataType);
+    if (DataType == CXPLAT_TLS_TICKET_DATA) {
+        QuicTraceLogConnVerbose(
+            SchannelIgnoringTicket,
+            TlsContext->Connection,
+            "Ignoring %u ticket bytes",
+            *BufferLength);
+        return CXPLAT_TLS_RESULT_ERROR;
+    }
+
     SEC_WCHAR* TargetServerName = NULL;
 
     SecBuffer* InSecBuffers = TlsContext->Workspace.InSecBuffers;
