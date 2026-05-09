@@ -503,15 +503,6 @@ CxPlatTlsWriteEarlyData(
     );
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
-CXPLAT_TLS_RESULT_FLAGS
-CxPlatTlsReadEarlyData(
-    _In_ CXPLAT_TLS* TlsContext,
-    _Inout_updates_bytes_opt_(*OutputBufferLength)
-        uint8_t* OutputBuffer,
-    _Inout_ uint32_t* OutputBufferLength
-    );
-
-_IRQL_requires_max_(PASSIVE_LEVEL)
 BOOLEAN
 CxPlatTlsEncrypt(
     _In_ CXPLAT_TLS* TlsContext,

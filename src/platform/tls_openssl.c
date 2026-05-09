@@ -1527,7 +1527,6 @@ CxPlatTlsOnServerSessionTicketDecrypted(
         TlsContext->Connection,
         "Session ticket decrypted, status %u",
         (uint32_t)status);
-    printf("Session ticket decrypted, status %u\n", (uint32_t)status);
 
     SSL_TICKET_RETURN Result;
     if (status == SSL_TICKET_SUCCESS) {
@@ -1938,7 +1937,6 @@ CxPlatTlsSecConfigCreate(
     if (!(CredConfigFlags & QUIC_CREDENTIAL_FLAG_CLIENT)) {
         if (!(TlsCredFlags & CXPLAT_TLS_CREDENTIAL_FLAG_DISABLE_RESUMPTION)) {
             Ret = SSL_CTX_set_max_early_data(SecurityConfig->SSLCtx, 0xFFFFFFFF);
-            printf("SSL_CTX_set_max_early_data returned %d\n", Ret);
             if (Ret != 1) {
                 QuicTraceEvent(
                     LibraryErrorStatus,
@@ -3638,7 +3636,36 @@ CxPlatTlsHandshake(
         *InputBufferLength = Ret;
     }
 
-#if 1
+    // After feeding incoming TLS records into OpenSSL via BIO_write(rbio),
+    // do NOT immediately advance the handshake.
+    //
+    // Instead, prioritize reading TLS 1.3 early data and repeatedly call
+    // SSL_read_early_data() until one of the following conditions is reached:
+    //
+    // (1) SSL_READ_EARLY_DATA_FINISH is returned:
+    //     -> No early data is present (or early data is already complete).
+    //
+    // (2) SSL_READ_EARLY_DATA_SUCCESS is returned at least once, and then
+    //     SSL_read_early_data() returns SSL_ERROR_WANT_READ:
+    //     -> All available early data has been fully consumed.
+    //
+    // (3) SSL_read_early_data() returns SSL_ERROR_WANT_WRITE:
+    //     -> OpenSSL requires the server handshake flight (e.g. ServerHello)
+    //        to be sent in order to make further progress.
+    //
+    // Handling:
+    //   - In case (1), exit the early data phase and transition to the normal
+    //     handshake phase by calling SSL_do_handshake() and draining wbio.
+    //
+    //   - In cases (2) and (3), advance the handshake by exactly one step
+    //     (SSL_do_handshake() + BIO_read(wbio)) to satisfy OpenSSL's state
+    //     requirements, but do not complete the handshake.
+    //     When additional TLS records are received, resume calling
+    //     SSL_read_early_data() with priority.
+    //
+    // This ensures that early data is never skipped or lost, while preventing
+    // the TLS handshake from completing prematurely.
+
     if (State->ReadEarlyData) {
         CXPLAT_DBG_ASSERT(TlsContext->IsServer);
         CXPLAT_DBG_ASSERT(State->EarlyDataBuffer != NULL && State->EarlyDataBufferAllocLength > 0);
@@ -3671,29 +3698,33 @@ CxPlatTlsHandshake(
                     State->EarlyDataBuffer + State->EarlyDataBufferLength,
                     State->EarlyDataBufferAllocLength - State->EarlyDataBufferLength,
                     &Appended);
-            printf("SSL_read_early_data returned %d, Appended: %zu\n", Ret, Appended);
             CXPLAT_DBG_ASSERT(Appended <= State->EarlyDataBufferAllocLength - State->EarlyDataBufferLength);
             State->EarlyDataBufferLength += Appended;
-            if (Ret == SSL_READ_EARLY_DATA_FINISH) {
+            switch (Ret) {
+            case SSL_READ_EARLY_DATA_FINISH:
                 State->ReadEarlyData = FALSE;
                 goto Handshake;
-            }
-            if (Ret == SSL_READ_EARLY_DATA_SUCCESS) {
-                // goto Handshake;
+            case SSL_READ_EARLY_DATA_SUCCESS:
+                // Successfully read some early data.
+                // Stay in this state until SSL_read_early_data() indicates completion.
                 State->ReadEarlyDataSuccess = TRUE;
-            }
-            if (Ret == SSL_READ_EARLY_DATA_ERROR) {
+                break;
+            case SSL_READ_EARLY_DATA_ERROR: {
                 int Err = SSL_get_error(TlsContext->Ssl, Ret);
                 switch (Err) {
                 case SSL_ERROR_WANT_READ:
-                    printf("read_early_data not complete, want read\n");
                     if (State->ReadEarlyDataSuccess) {
+                        // All available early data has been consumed,
+                        // so execute the handshake to move past the early data phase.
                         goto Handshake;
                     }
-                    break;
+                    goto Exit;
+
                 case SSL_ERROR_WANT_WRITE:
-                    printf("read_early_data not complete, want write\n");
-                    break;
+                    // OpenSSL requires the server handshake flight to be sent before
+                    // more early data can be processed.
+                    goto Handshake;
+
                 case SSL_ERROR_SSL: {
                     char buf[256];
                     const char* file;
@@ -3702,7 +3733,7 @@ CxPlatTlsHandshake(
                     QuicTraceLogConnError(
                         OpenSslHandshakeErrorStr,
                         TlsContext->Connection,
-                        "TLS handshake error: %s, file:%s:%d",
+                        "SSL_read_early_data error: %s, file:%s:%d",
                         buf,
                         (strlen(file) > OpenSslFilePrefixLength ? file + OpenSslFilePrefixLength : file),
                         line);
@@ -3714,16 +3745,23 @@ CxPlatTlsHandshake(
                     QuicTraceLogConnError(
                         OpenSslHandshakeError,
                         TlsContext->Connection,
-                        "TLS handshake error: %d",
+                        "SSL_read_early_data error: %d",
                         Err);
                     State->ReadEarlyData = FALSE;
                     goto Handshake;
                 }
             }
+            default:
+                QuicTraceLogConnError(
+                    OpenSslHandshakeError,
+                    TlsContext->Connection,
+                    "Unexpected SSL_read_early_data return value: %d",
+                    Ret);
+                State->ReadEarlyData = FALSE;
+                goto Handshake;
+            }
         } while (Ret == SSL_READ_EARLY_DATA_SUCCESS && Appended > 0);
-        goto Exit;
     }
-#endif
 
 Handshake:
     if (!State->HandshakeComplete) {
@@ -3732,10 +3770,8 @@ Handshake:
             int Err = SSL_get_error(TlsContext->Ssl, Ret);
             switch (Err) {
             case SSL_ERROR_WANT_READ:
-                printf("Handshake not complete, want read\n");
                 break;
             case SSL_ERROR_WANT_WRITE:
-                printf("Handshake not complete, want write\n");
                 break;
             case SSL_ERROR_SSL: {
                 char buf[256];
@@ -3930,41 +3966,6 @@ CxPlatTlsWriteEarlyData(
 }
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
-CXPLAT_TLS_RESULT_FLAGS
-CxPlatTlsReadEarlyData(
-    _In_ CXPLAT_TLS* TlsContext,
-    _Inout_updates_bytes_opt_(*OutputBufferLength)
-        uint8_t* OutputBuffer,
-    _Inout_ uint32_t* OutputBufferLength
-    )
-{
-    CXPLAT_DBG_ASSERT(OutputBuffer != NULL && *OutputBufferLength > 0);
-    CXPLAT_DBG_ASSERT(TlsContext->IsQMux);
-    CXPLAT_TLS_RESULT_FLAGS Result = 0;
-    int Ret =
-        SSL_read_early_data(
-            TlsContext->Ssl,
-            OutputBuffer,
-            (int)*OutputBufferLength,
-            (size_t*)OutputBufferLength);
-    printf("SSL_read_early_data returned %d, OutputBufferLength: %u\n", Ret, *OutputBufferLength);
-    switch (Ret) {
-    case SSL_READ_EARLY_DATA_SUCCESS:
-        Result |= CXPLAT_TLS_RESULT_CONTINUE;
-        break;
-    case SSL_READ_EARLY_DATA_FINISH:
-        break;
-    case SSL_READ_EARLY_DATA_ERROR:
-        *OutputBufferLength = 0;
-        Result |= CXPLAT_TLS_RESULT_ERROR;
-        break;
-    default:
-        break;
-    }
-    return Result;
-}
-
-_IRQL_requires_max_(PASSIVE_LEVEL)
 BOOLEAN
 CxPlatTlsEncrypt(
     _In_ CXPLAT_TLS* TlsContext,
@@ -3974,17 +3975,14 @@ CxPlatTlsEncrypt(
     int Ret;
     CXPLAT_DBG_ASSERT(TlsContext->IsQMux);
 
-    printf("DataLength: %zu, Capacity: %zu\n", Buffer->DataLength, Buffer->Capacity);
     if (Buffer->Capacity < 5 + Buffer->DataLength + 512) {
         // Not enough room for encryption overhead, which can be up to 5 bytes for the TLS record
         // header and up to 512 bytes for the trailer.
-        printf("Buffer capacity %zu is too small for the data length %zu\n", Buffer->Capacity, Buffer->DataLength);
         return FALSE;
     }
 
     if (Buffer->DataLength > 16384) {
         // TLS record plaintext cannot exceed 2^14 bytes.
-        printf("Buffer data length %zu exceeds maximum TLS record plaintext length\n", Buffer->DataLength);
         return FALSE;
     }
 
@@ -4023,7 +4021,6 @@ CxPlatTlsEncrypt(
     size_t Offset = 0;
     Buffer->DataLength = 0;
     while (BIO_pending(TlsContext->wbio) > 0) {
-        printf("Offset: %zu, Capacity: %zu\n", Offset, Buffer->Capacity);
         CXPLAT_DBG_ASSERT(Offset <= Buffer->Capacity);
         Ret = BIO_read(TlsContext->wbio, Buffer->Base + Offset, (int)(Buffer->Capacity - Offset));
         if (Ret < 0) {

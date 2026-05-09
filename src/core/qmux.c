@@ -163,12 +163,10 @@ QuicQMuxInitializeTls(
 
     if (QuicConnIsClient(Connection)) {
         if (QMux->PermitEarlyData) {
-             printf("Client permitting early data.\n");
              QuicSendSetSendFlag(&Connection->Send, QUIC_CONN_SEND_FLAG_QX_TRANSPORT_PARAMETERS);
              QuicSendFlush(&Connection->Send);
         }
         if (QMux->EarlyDataBufferLength > 0) {
-            printf("Attempting to write %u bytes of early data.\n", QMux->EarlyDataBufferLength);
             uint32_t EarlyDataBufferOffset = 0;
             while (EarlyDataBufferOffset < QMux->EarlyDataBufferLength) {
                 uint32_t EarlyDataBufferConsumedLength =
@@ -278,7 +276,6 @@ QuicQMuxProcessHandshake(
                 OutputBuffers,
                 OutputBuffersCount,
                 &QMux->TlsState);
-        printf("Handshake result: 0x%02x\n", QMux->ResultFlags);
         if (QMux->ResultFlags & CXPLAT_TLS_RESULT_ERROR) {
             Status = QUIC_STATUS_HANDSHAKE_FAILURE;
             QuicTraceEvent(
@@ -296,7 +293,6 @@ QuicQMuxProcessHandshake(
             }
             goto Exit;
         }
-        printf("Consumed %u bytes of input data, BufferOffset=%u., BufferLength=%u\n", ConsumedBufferLength, BufferOffset, *BufferLength);
         BufferOffset += ConsumedBufferLength;
         ConsumedBufferLength = BufferCapacity - BufferOffset;
         *BufferLength = BufferOffset;
@@ -1121,7 +1117,6 @@ QuicQMuxRecvData(
         }
 
         if (QMux->ResultFlags & CXPLAT_TLS_RESULT_EARLY_DATA_ACCEPT) {
-            printf("Early data accepted\n");
             QUIC_SENT_PACKET_METADATA* SentPacket = QMux->SentEarlyDataPackets;
              while (SentPacket != NULL) {
                 QUIC_SENT_PACKET_METADATA* Next = SentPacket->Next;
@@ -1165,7 +1160,6 @@ QuicQMuxRecvData(
                 SentPacket = Next;
             }
         } else if (QMux->ResultFlags & CXPLAT_TLS_RESULT_EARLY_DATA_REJECT) {
-            printf("Early data rejected\n");
             QUIC_SENT_PACKET_METADATA* SentPacket = QMux->SentEarlyDataPackets;
              while (SentPacket != NULL) {
                 QUIC_SENT_PACKET_METADATA* Next = SentPacket->Next;
@@ -1335,20 +1329,20 @@ QuicQMuxRecvData(
                         NULL);
                     goto Error;
                 }
-                printf("Decrypted %u bytes of TLS data into receive buffer\n", AppendedRecvBufferLength);
                 RecvDataOffset += ConsumedRecvDataLength;
                 ConsumedRecvDataLength = RecvDataLength - RecvDataOffset;
                 QMux->RecvBufferLength += AppendedRecvBufferLength;
 
-                QUIC_VAR_INT RecordLength = 0;
-                uint16_t RecordOffset = 0;
+                QUIC_VAR_INT RecordLength;
+                uint16_t RecordOffset;
                 uint32_t ProcessOffset = 0;
                 do {
-                    QuicVarIntDecode((uint16_t)(QMux->RecvBufferLength - ProcessOffset),
+                    RecordLength = 0;
+                    RecordOffset = 0;
+                    if (!QuicVarIntDecode((uint16_t)(QMux->RecvBufferLength - ProcessOffset),
                         QMux->RecvBuffer + ProcessOffset,
                         &RecordOffset,
-                        &RecordLength);
-                    if (RecordLength == 0) {
+                        &RecordLength)) {
                         break;
                     }
                     if (QMux->RecvBufferLength - ProcessOffset < RecordOffset + RecordLength) {

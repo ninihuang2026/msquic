@@ -535,7 +535,6 @@ QuicPacketBuilderQMuxPrepare(
 
     BOOLEAN NewQuicPacket = FALSE;
     if ((Builder->Datagram != NULL && (Builder->Datagram->Length - Builder->DatagramLength) < QUIC_MIN_PACKET_SPARE_SPACE)) {
-        printf("QMux: Current datagram has %u bytes available, which is less than the minimum spare space required. Finalizing current packet.\n", Builder->Datagram->Length - Builder->DatagramLength);
         //
         // The current data cannot go in the current QUIC packet. Finalize the
         // current QUIC packet up so we can create another.
@@ -1347,7 +1346,6 @@ QuicPacketBuilderQMuxFinalize(
                     NewEarlyDataBufferAllocLength *= 2;
                 }
             }
-            printf("QMux: Allocating early data buffer of size %u bytes, required %u bytes\n", NewEarlyDataBufferAllocLength, RequiredLength);
             uint8_t* NewEarlyDataBuffer = CXPLAT_ALLOC_NONPAGED(NewEarlyDataBufferAllocLength, QUIC_POOL_QMUX_EARLY_DATA_BUFFER);
             if (NewEarlyDataBuffer == NULL) {
                 QuicTraceEvent(
@@ -1370,7 +1368,6 @@ QuicPacketBuilderQMuxFinalize(
             QMux->EarlyDataBuffer = NewEarlyDataBuffer;
         }
         CXPLAT_DBG_ASSERT(QMux->EarlyDataBuffer != NULL);
-        printf("QMux: Appending early data of size %u bytes to early data buffer, total length now %u bytes\n", PayloadLength + QMuxRecordLength, QMux->EarlyDataBufferLength + PayloadLength + QMuxRecordLength);
         CxPlatCopyMemory(
             QMux->EarlyDataBuffer + QMux->EarlyDataBufferLength,
             Header + 5,
@@ -1433,7 +1430,6 @@ QuicPacketBuilderQMuxFinalize(
         if (!CxPlatTlsEncrypt(
                 QMux->TLS,
                 &EncryptBuffer)) {
-            printf("QMux: Encryption failed for packet %lu\n", Builder->Metadata->PacketId);
             QuicConnFatalError(Connection, QUIC_STATUS_ABORTED, "Encryption failure");
             goto Exit;
         }

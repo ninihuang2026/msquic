@@ -1797,7 +1797,6 @@ QuicConnOnShutdownComplete(
     QuicDatagramSendShutdown(&Connection->Datagram);
     if (QuicConnIsQMux(Connection)) {
         if (QuicConnGetQMux(Connection)->Socket != NULL) {
-            printf("Socket=%p\n", QuicConnGetQMux(Connection)->Socket);
             CxPlatSocketDelete(QuicConnGetQMux(Connection)->Socket);
         }
     }

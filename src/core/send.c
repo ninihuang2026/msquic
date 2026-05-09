@@ -1545,7 +1545,6 @@ QuicSendFlush(
     if (QuicConnIsQMux(Connection) &&
         !QuicConnGetQMux(Connection)->TlsState.HandshakeComplete &&
         !QuicConnGetQMux(Connection)->PermitEarlyData) {
-        printf("QMux handshake not complete, cannot send\n");
         return TRUE;
     }
 

@@ -771,7 +771,6 @@ QuicStreamSentMetadataIncrement(
     _In_ QUIC_STREAM* Stream
     )
 {
-    printf("QuicStreamSentMetadataIncrement: StreamId=%lu, OutstandingSentMetadata=%u\n", Stream->ID, Stream->OutstandingSentMetadata);
     if (++Stream->OutstandingSentMetadata == 1) {
         QuicStreamAddRef(Stream, QUIC_STREAM_REF_SEND_PACKET);
     }
@@ -789,7 +788,6 @@ QuicStreamSentMetadataDecrement(
     _In_ QUIC_STREAM* Stream
     )
 {
-    printf("QuicStreamSentMetadataDecrement: StreamId=%lu, OutstandingSentMetadata=%u\n", Stream->ID, Stream->OutstandingSentMetadata);
     CXPLAT_DBG_ASSERT(Stream->OutstandingSentMetadata != 0);
     if (--Stream->OutstandingSentMetadata == 0) {
         QuicStreamRelease(Stream, QUIC_STREAM_REF_SEND_PACKET);
