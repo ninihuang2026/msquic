@@ -3619,9 +3619,10 @@ CxPlatTlsHandshake(
         goto Send;
     }
 
-    if (InputBuffer == NULL && *InputBufferLength != 0) {
+    if (InputBuffer == NULL && *InputBufferLength == 0) {
         goto Handshake;
     }
+
     if (InputBuffer != NULL && *InputBufferLength > 0) {
         Ret = BIO_write(TlsContext->rbio, InputBuffer, (int)*InputBufferLength);
         if (Ret < 0) {
@@ -3772,8 +3773,10 @@ Handshake:
             switch (Err) {
             case SSL_ERROR_WANT_READ:
                 break;
+
             case SSL_ERROR_WANT_WRITE:
                 break;
+
             case SSL_ERROR_SSL: {
                 char buf[256];
                 const char* file;
@@ -3826,7 +3829,6 @@ Handshake:
                 }
             }
             TlsContext->ResultFlags |= CXPLAT_TLS_RESULT_HANDSHAKE_COMPLETE;
-
 
             if (!TlsContext->IsServer) {
                 const uint8_t* NegotiatedAlpn;
@@ -3904,9 +3906,11 @@ Send:
             OutputBuffer = &OutputBuffers[OutputBufferCount];
             OutputBufferOffset = 0;
         }
-        Ret = BIO_read(TlsContext->wbio,
-            OutputBuffer->Buffer + OutputBufferOffset,
-            (int)(OutputBuffer->Length - OutputBufferOffset));
+        Ret =
+            BIO_read(
+                TlsContext->wbio,
+                OutputBuffer->Buffer + OutputBufferOffset,
+                (int)(OutputBuffer->Length - OutputBufferOffset));
         if (Ret < 0) {
             int Err = SSL_get_error(TlsContext->Ssl, Ret);
             if (Err == SSL_ERROR_SSL) {
@@ -3917,15 +3921,15 @@ Send:
                 QuicTraceLogConnError(
                     OpenSslHandshakeErrorStr,
                     TlsContext->Connection,
-                    "TLS handshake error: %s, file:%s:%d",
+                    "BIO_read error: %s, file:%s:%d",
                     buf,
                     (strlen(file) > OpenSslFilePrefixLength ? file + OpenSslFilePrefixLength : file),
                     line);
             } else {
                 QuicTraceLogConnError(
-                    OpenSslBIOWriteError,
+                    OpenSslBIOReadError,
                     TlsContext->Connection,
-                    "BIO_write failed, error: %d",
+                    "BIO_read failed, error: %d",
                     Err);
             }
             TlsContext->ResultFlags |= CXPLAT_TLS_RESULT_ERROR;
