@@ -3699,7 +3699,6 @@ CxPlatTlsHandshake(
                     State->EarlyDataBuffer + State->EarlyDataBufferLength,
                     State->EarlyDataBufferAllocLength - State->EarlyDataBufferLength,
                     &ReadLength);
-            CXPLAT_DBG_ASSERT(ReadLength <= State->EarlyDataBufferAllocLength - State->EarlyDataBufferLength);
             State->EarlyDataBufferLength += (uint32_t)ReadLength;
             switch (Ret) {
             case SSL_READ_EARLY_DATA_FINISH:

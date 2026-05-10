@@ -1159,6 +1159,11 @@ QuicQMuxOnPacketLost(
                 QUIC_DATAGRAM_SEND_LOST_SUSPECT);
             Packet->Frames[i].DATAGRAM.ClientContext = NULL;
             break;
+        case QX_FRAME_TRANSPORT_PARAMETERS:
+            QuicSendSetSendFlag(
+                &Connection->Send,
+                QUIC_CONN_SEND_FLAG_QX_TRANSPORT_PARAMETERS);
+            break;
         default:
             break;
         }
@@ -1308,8 +1313,18 @@ QuicQMuxRecvData(
         }
 
         if (QMux->ResultFlags & CXPLAT_TLS_RESULT_EARLY_DATA_ACCEPT) {
+            QuicTraceEvent(
+                ConnEarlyDataStatus,
+                "[conn][%p] Early data %s",
+                Connection,
+                "accepted");
             QuicQMuxOnPacketsAcknowledged(QMux);
         } else if (QMux->ResultFlags & CXPLAT_TLS_RESULT_EARLY_DATA_REJECT) {
+            QuicTraceEvent(
+                ConnEarlyDataStatus,
+                "[conn][%p] Early data %s",
+                Connection,
+                "rejected");
             QuicQMuxOnPacketsLost(QMux);
         }
 
