@@ -82,6 +82,16 @@ QuicQMuxUninitialize(
         QMux->TcpReceiveQueue = NULL;
     }
 
+    if (QMux->SentEarlyDataPackets != NULL) {
+        QUIC_SENT_PACKET_METADATA* SentPacket = QMux->SentEarlyDataPackets;
+        while (SentPacket != NULL) {
+            QUIC_SENT_PACKET_METADATA* Next = SentPacket->Next;
+            QuicSentPacketPoolReturnPacketMetadata(SentPacket, QMux->Connection);
+            SentPacket = Next;
+        }
+        QMux->SentEarlyDataPackets = NULL;
+        QMux->SentEarlyDataPacketsTail = &QMux->SentEarlyDataPackets;
+    }
     if (QMux->RecvBuffer != NULL) {
         CXPLAT_FREE(QMux->RecvBuffer, QUIC_POOL_QMUX_RECV_BUFFER);
         QMux->RecvBuffer = NULL;
@@ -1060,7 +1070,7 @@ QuicQMuxOnPacketsAcknowledged(
         SentPacket = Next;
     }
     QMux->SentEarlyDataPackets = NULL;
-    *QMux->SentEarlyDataPacketsTail = QMux->SentEarlyDataPackets;
+    QMux->SentEarlyDataPacketsTail = &QMux->SentEarlyDataPackets;
 }
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
@@ -1167,7 +1177,7 @@ QuicQMuxOnPacketsLost(
         SentPacket = Next;
     }
     QMux->SentEarlyDataPackets = NULL;
-    *QMux->SentEarlyDataPacketsTail = QMux->SentEarlyDataPackets;
+    QMux->SentEarlyDataPacketsTail = &QMux->SentEarlyDataPackets;
 }
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
