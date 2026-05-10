@@ -92,18 +92,22 @@ QuicQMuxUninitialize(
         QMux->SentEarlyDataPackets = NULL;
         QMux->SentEarlyDataPacketsTail = &QMux->SentEarlyDataPackets;
     }
+
     if (QMux->RecvBuffer != NULL) {
         CXPLAT_FREE(QMux->RecvBuffer, QUIC_POOL_QMUX_RECV_BUFFER);
         QMux->RecvBuffer = NULL;
     }
+
     if (QMux->EarlyDataBuffer != NULL) {
         CXPLAT_FREE(QMux->EarlyDataBuffer, QUIC_POOL_QMUX_EARLY_DATA_BUFFER);
         QMux->EarlyDataBuffer = NULL;
     }
+
     if (QMux->TlsState.EarlyDataBuffer != NULL) {
         CXPLAT_FREE(QMux->TlsState.EarlyDataBuffer, QUIC_POOL_TLS_EARLY_DATA_BUFFER);
         QMux->TlsState.EarlyDataBuffer = NULL;
     }
+    
     CxPlatDispatchLockUninitialize(&QMux->TcpReceiveQueueLock);
     CxPlatEventUninitialize(QMux->ConnectEvent);
     CxPlatPoolFree(QMux);
