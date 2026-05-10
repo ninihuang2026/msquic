@@ -995,6 +995,179 @@ Done:
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
 void
+QuicQMuxOnPacketAcknowledged(
+    _In_ QUIC_QMUX* QMux,
+    _In_ QUIC_SENT_PACKET_METADATA* Packet
+    )
+{
+    QUIC_CONNECTION* Connection = QMux->Connection;
+
+    for (uint8_t i = 0; i < Packet->FrameCount; ++i) {
+        switch (Packet->Frames[i].Type) {
+        case QUIC_FRAME_RESET_STREAM:
+            QuicStreamOnResetAck(Packet->Frames[i].RESET_STREAM.Stream);
+            break;
+        case QUIC_FRAME_RELIABLE_RESET_STREAM:
+            QuicStreamOnResetReliableAck(
+                Packet->Frames[i].RELIABLE_RESET_STREAM.Stream);
+            break;
+        case QUIC_FRAME_STREAM:
+        case QUIC_FRAME_STREAM_1:
+        case QUIC_FRAME_STREAM_2:
+        case QUIC_FRAME_STREAM_3:
+        case QUIC_FRAME_STREAM_4:
+        case QUIC_FRAME_STREAM_5:
+        case QUIC_FRAME_STREAM_6:
+        case QUIC_FRAME_STREAM_7: {
+            QUIC_SEND_PACKET_FLAGS DummyFlags = { 0 };
+            QuicStreamOnAck(
+                Packet->Frames[i].STREAM.Stream,
+                DummyFlags,
+                &Packet->Frames[i]);
+            break;
+        }
+        case QUIC_FRAME_DATAGRAM:
+        case QUIC_FRAME_DATAGRAM_1:
+            QuicDatagramIndicateSendStateChange(
+                Connection,
+                &Packet->Frames[i].DATAGRAM.ClientContext,
+                QUIC_DATAGRAM_SEND_ACKNOWLEDGED);
+            Packet->Frames[i].DATAGRAM.ClientContext = NULL;
+            break;
+        default:
+            break;
+        }
+    }
+}
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+void
+QuicQMuxOnPacketsAcknowledged(
+    _In_ QUIC_QMUX* QMux
+    )
+{
+    QUIC_CONNECTION* Connection = QMux->Connection;
+
+    QUIC_SENT_PACKET_METADATA* SentPacket = QMux->SentEarlyDataPackets;
+    while (SentPacket != NULL) {
+        QUIC_SENT_PACKET_METADATA* Next = SentPacket->Next;
+        QuicQMuxOnPacketAcknowledged(QMux, SentPacket);
+        QuicSentPacketPoolReturnPacketMetadata(SentPacket, Connection);
+        SentPacket = Next;
+    }
+    QMux->SentEarlyDataPackets = NULL;
+    *QMux->SentEarlyDataPacketsTail = QMux->SentEarlyDataPackets;
+}
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+void
+QuicQMuxOnPacketLost(
+    _In_ QUIC_QMUX* QMux,
+    _In_ QUIC_SENT_PACKET_METADATA* Packet
+    )
+{
+    QUIC_CONNECTION* Connection = QMux->Connection;
+
+    for (uint8_t i = 0; i < Packet->FrameCount; ++i) {
+        switch (Packet->Frames[i].Type) {
+        case QUIC_FRAME_RESET_STREAM:
+            QuicSendSetStreamSendFlag(
+                &Connection->Send,
+                Packet->Frames[i].RESET_STREAM.Stream,
+                QUIC_STREAM_SEND_FLAG_SEND_ABORT,
+                FALSE);
+            break;
+        case QUIC_FRAME_RELIABLE_RESET_STREAM:
+            QuicSendSetStreamSendFlag(
+                &Connection->Send,
+                Packet->Frames[i].RELIABLE_RESET_STREAM.Stream,
+                QUIC_STREAM_SEND_FLAG_RELIABLE_ABORT,
+                FALSE);
+            break;
+        case QUIC_FRAME_STOP_SENDING:
+            QuicSendSetStreamSendFlag(
+                &Connection->Send,
+                Packet->Frames[i].STOP_SENDING.Stream,
+                QUIC_STREAM_SEND_FLAG_RECV_ABORT,
+                FALSE);
+            break;
+
+        case QUIC_FRAME_STREAM:
+        case QUIC_FRAME_STREAM_1:
+        case QUIC_FRAME_STREAM_2:
+        case QUIC_FRAME_STREAM_3:
+        case QUIC_FRAME_STREAM_4:
+        case QUIC_FRAME_STREAM_5:
+        case QUIC_FRAME_STREAM_6:
+        case QUIC_FRAME_STREAM_7:
+            QuicStreamOnLoss(
+                Packet->Frames[i].STREAM.Stream,
+                &Packet->Frames[i]);
+            break;
+        case QUIC_FRAME_MAX_DATA:
+            QuicSendSetSendFlag(
+                &Connection->Send,
+                QUIC_CONN_SEND_FLAG_MAX_DATA);
+            break;
+        case QUIC_FRAME_MAX_STREAM_DATA:
+            QuicSendSetStreamSendFlag(
+                &Connection->Send,
+                Packet->Frames[i].MAX_STREAM_DATA.Stream,
+                QUIC_STREAM_SEND_FLAG_MAX_DATA,
+                FALSE);
+            break;
+        case QUIC_FRAME_MAX_STREAMS:
+            QuicSendSetSendFlag(
+                &Connection->Send,
+                QUIC_CONN_SEND_FLAG_MAX_STREAMS_BIDI);
+            break;
+        case QUIC_FRAME_MAX_STREAMS_1:
+            QuicSendSetSendFlag(
+                &Connection->Send,
+                QUIC_CONN_SEND_FLAG_MAX_STREAMS_UNI);
+            break;
+        case QUIC_FRAME_STREAM_DATA_BLOCKED:
+            QuicSendSetStreamSendFlag(
+                &Connection->Send,
+                Packet->Frames[i].STREAM_DATA_BLOCKED.Stream,
+                QUIC_STREAM_SEND_FLAG_DATA_BLOCKED,
+                FALSE);
+            break;
+        case QUIC_FRAME_DATAGRAM:
+        case QUIC_FRAME_DATAGRAM_1:
+            QuicDatagramIndicateSendStateChange(
+                Connection,
+                &Packet->Frames[i].DATAGRAM.ClientContext,
+                QUIC_DATAGRAM_SEND_LOST_SUSPECT);
+            Packet->Frames[i].DATAGRAM.ClientContext = NULL;
+            break;
+        default:
+            break;
+        }
+    }
+}
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+void
+QuicQMuxOnPacketsLost(
+    _In_ QUIC_QMUX* QMux
+    )
+{
+    QUIC_CONNECTION* Connection = QMux->Connection;
+
+    QUIC_SENT_PACKET_METADATA* SentPacket = QMux->SentEarlyDataPackets;
+    while (SentPacket != NULL) {
+        QUIC_SENT_PACKET_METADATA* Next = SentPacket->Next;
+        QuicQMuxOnPacketLost(QMux, SentPacket);
+        QuicSentPacketPoolReturnPacketMetadata(SentPacket, Connection);
+        SentPacket = Next;
+    }
+    QMux->SentEarlyDataPackets = NULL;
+    *QMux->SentEarlyDataPacketsTail = QMux->SentEarlyDataPackets;
+}
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+void
 QuicQMuxRecvData(
     _In_ QUIC_QMUX* QMux,
     _In_ CXPLAT_RECV_DATA* RecvDataChain,
@@ -1117,132 +1290,9 @@ QuicQMuxRecvData(
         }
 
         if (QMux->ResultFlags & CXPLAT_TLS_RESULT_EARLY_DATA_ACCEPT) {
-            QUIC_SENT_PACKET_METADATA* SentPacket = QMux->SentEarlyDataPackets;
-             while (SentPacket != NULL) {
-                QUIC_SENT_PACKET_METADATA* Next = SentPacket->Next;
-                for (uint8_t i = 0; i < SentPacket->FrameCount; ++i) {
-                    switch (SentPacket->Frames[i].Type) {
-                    case QUIC_FRAME_RESET_STREAM:
-                        QuicStreamOnResetAck(SentPacket->Frames[i].RESET_STREAM.Stream);
-                        break;
-                    case QUIC_FRAME_RELIABLE_RESET_STREAM:
-                        QuicStreamOnResetReliableAck(
-                            SentPacket->Frames[i].RELIABLE_RESET_STREAM.Stream);
-                        break;
-                    case QUIC_FRAME_STREAM:
-                    case QUIC_FRAME_STREAM_1:
-                    case QUIC_FRAME_STREAM_2:
-                    case QUIC_FRAME_STREAM_3:
-                    case QUIC_FRAME_STREAM_4:
-                    case QUIC_FRAME_STREAM_5:
-                    case QUIC_FRAME_STREAM_6:
-                    case QUIC_FRAME_STREAM_7: {
-                        QUIC_SEND_PACKET_FLAGS DummyFlags = { 0 };
-                        QuicStreamOnAck(
-                            SentPacket->Frames[i].STREAM.Stream,
-                            DummyFlags,
-                            &SentPacket->Frames[i]);
-                        break;
-                    }
-                    case QUIC_FRAME_DATAGRAM:
-                    case QUIC_FRAME_DATAGRAM_1:
-                        QuicDatagramIndicateSendStateChange(
-                            Connection,
-                            &SentPacket->Frames[i].DATAGRAM.ClientContext,
-                            QUIC_DATAGRAM_SEND_ACKNOWLEDGED);
-                        SentPacket->Frames[i].DATAGRAM.ClientContext = NULL;
-                        break;
-                    default:
-                        break;
-                    }
-                }
-                QuicSentPacketPoolReturnPacketMetadata(SentPacket, Connection);
-                SentPacket = Next;
-            }
+            QuicQMuxOnPacketsAcknowledged(QMux);
         } else if (QMux->ResultFlags & CXPLAT_TLS_RESULT_EARLY_DATA_REJECT) {
-            QUIC_SENT_PACKET_METADATA* SentPacket = QMux->SentEarlyDataPackets;
-             while (SentPacket != NULL) {
-                QUIC_SENT_PACKET_METADATA* Next = SentPacket->Next;
-                for (uint8_t i = 0; i < SentPacket->FrameCount; ++i) {
-                    switch (SentPacket->Frames[i].Type) {
-                    case QUIC_FRAME_RESET_STREAM:
-                        QuicSendSetStreamSendFlag(
-                            &Connection->Send,
-                            SentPacket->Frames[i].RESET_STREAM.Stream,
-                            QUIC_STREAM_SEND_FLAG_SEND_ABORT,
-                            FALSE);
-                        break;
-                    case QUIC_FRAME_RELIABLE_RESET_STREAM:
-                        QuicSendSetStreamSendFlag(
-                            &Connection->Send,
-                            SentPacket->Frames[i].RELIABLE_RESET_STREAM.Stream,
-                            QUIC_STREAM_SEND_FLAG_RELIABLE_ABORT,
-                            FALSE);
-                        break;
-                    case QUIC_FRAME_STOP_SENDING:
-                        QuicSendSetStreamSendFlag(
-                            &Connection->Send,
-                            SentPacket->Frames[i].STOP_SENDING.Stream,
-                            QUIC_STREAM_SEND_FLAG_RECV_ABORT,
-                            FALSE);
-                        break;
-
-                    case QUIC_FRAME_STREAM:
-                    case QUIC_FRAME_STREAM_1:
-                    case QUIC_FRAME_STREAM_2:
-                    case QUIC_FRAME_STREAM_3:
-                    case QUIC_FRAME_STREAM_4:
-                    case QUIC_FRAME_STREAM_5:
-                    case QUIC_FRAME_STREAM_6:
-                    case QUIC_FRAME_STREAM_7:
-                        QuicStreamOnLoss(
-                            SentPacket->Frames[i].STREAM.Stream,
-                            &SentPacket->Frames[i]);
-                        break;
-                    case QUIC_FRAME_MAX_DATA:
-                        QuicSendSetSendFlag(
-                            &Connection->Send,
-                            QUIC_CONN_SEND_FLAG_MAX_DATA);
-                        break;
-                    case QUIC_FRAME_MAX_STREAM_DATA:
-                        QuicSendSetStreamSendFlag(
-                            &Connection->Send,
-                            SentPacket->Frames[i].MAX_STREAM_DATA.Stream,
-                            QUIC_STREAM_SEND_FLAG_MAX_DATA,
-                            FALSE);
-                        break;
-                    case QUIC_FRAME_MAX_STREAMS:
-                        QuicSendSetSendFlag(
-                            &Connection->Send,
-                            QUIC_CONN_SEND_FLAG_MAX_STREAMS_BIDI);
-                        break;
-                    case QUIC_FRAME_MAX_STREAMS_1:
-                        QuicSendSetSendFlag(
-                            &Connection->Send,
-                            QUIC_CONN_SEND_FLAG_MAX_STREAMS_UNI);
-                        break;
-                    case QUIC_FRAME_STREAM_DATA_BLOCKED:
-                        QuicSendSetStreamSendFlag(
-                            &Connection->Send,
-                            SentPacket->Frames[i].STREAM_DATA_BLOCKED.Stream,
-                            QUIC_STREAM_SEND_FLAG_DATA_BLOCKED,
-                            FALSE);
-                        break;
-                    case QUIC_FRAME_DATAGRAM:
-                    case QUIC_FRAME_DATAGRAM_1:
-                        QuicDatagramIndicateSendStateChange(
-                            Connection,
-                            &SentPacket->Frames[i].DATAGRAM.ClientContext,
-                            QUIC_DATAGRAM_SEND_LOST_SUSPECT);
-                        SentPacket->Frames[i].DATAGRAM.ClientContext = NULL;
-                        break;
-                    default:
-                        break;
-                    }
-                }
-                QuicSentPacketPoolReturnPacketMetadata(SentPacket, Connection);
-                SentPacket = Next;
-            }
+            QuicQMuxOnPacketsLost(QMux);
         }
 
         if (QMux->TlsState.HandshakeComplete) {

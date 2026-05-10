@@ -135,6 +135,13 @@ QuicQMuxFlushRecv(
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
 void
+QuicQMuxOnPacketAcknowledged(
+    _In_ QUIC_QMUX* QMux,
+    _In_ QUIC_SENT_PACKET_METADATA* Packet
+    );
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+void
 QuicQMuxProcessTcpDisconnect(
     _In_ QUIC_QMUX* QMux
     );

@@ -1445,42 +1445,7 @@ QuicPacketBuilderQMuxFinalize(
         Builder->Metadata->PacketLength = (uint16_t)Builder->Datagram->Length;
         Builder->Metadata->Flags.EcnEctSet = Builder->EcnEctSet;
 
-        for (uint8_t i = 0; i < Builder->Metadata->FrameCount; ++i) {
-            switch (Builder->Metadata->Frames[i].Type) {
-            case QUIC_FRAME_RESET_STREAM:
-                QuicStreamOnResetAck(Builder->Metadata->Frames[i].RESET_STREAM.Stream);
-                break;
-            case QUIC_FRAME_RELIABLE_RESET_STREAM:
-                QuicStreamOnResetReliableAck(
-                    Builder->Metadata->Frames[i].RELIABLE_RESET_STREAM.Stream);
-                break;
-            case QUIC_FRAME_STREAM:
-            case QUIC_FRAME_STREAM_1:
-            case QUIC_FRAME_STREAM_2:
-            case QUIC_FRAME_STREAM_3:
-            case QUIC_FRAME_STREAM_4:
-            case QUIC_FRAME_STREAM_5:
-            case QUIC_FRAME_STREAM_6:
-            case QUIC_FRAME_STREAM_7: {
-                QUIC_SEND_PACKET_FLAGS DummyFlags = { 0 };
-                QuicStreamOnAck(
-                    Builder->Metadata->Frames[i].STREAM.Stream,
-                    DummyFlags,
-                    &Builder->Metadata->Frames[i]);
-                break;
-            }
-            case QUIC_FRAME_DATAGRAM:
-            case QUIC_FRAME_DATAGRAM_1:
-                QuicDatagramIndicateSendStateChange(
-                    Connection,
-                    &Builder->Metadata->Frames[i].DATAGRAM.ClientContext,
-                    QUIC_DATAGRAM_SEND_ACKNOWLEDGED);
-                Builder->Metadata->Frames[i].DATAGRAM.ClientContext = NULL;
-                break;
-            default:
-                break;
-            }
-        }
+        QuicQMuxOnPacketAcknowledged(QMux, Builder->Metadata);
         QuicSentPacketMetadataReleaseFrames(Builder->Metadata, Connection);
     }
 
