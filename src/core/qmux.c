@@ -1072,19 +1072,21 @@ QuicQMuxRecvData(
 
             if (QuicConnIsServer(Connection) &&
                 QMux->TlsState.EarlyDataBufferLength > 0) {
-                QUIC_VAR_INT RecordLength = 0;
-                uint16_t RecordOffset = 0;
-                uint32_t ProcessOffset = 0;
+                QUIC_VAR_INT RecordLength;
+                uint16_t RecordOffset;
+                uint32_t EarlyDataBufferOffset = 0;
                 do {
-                    QuicVarIntDecode(
-                        (uint16_t)(QMux->TlsState.EarlyDataBufferLength - ProcessOffset),
-                        QMux->TlsState.EarlyDataBuffer + ProcessOffset,
+                    RecordLength = 0;
+                    RecordOffset = 0;
+                    if (!QuicVarIntDecode(
+                        (uint16_t)(QMux->TlsState.EarlyDataBufferLength - EarlyDataBufferOffset),
+                        QMux->TlsState.EarlyDataBuffer + EarlyDataBufferOffset,
                         &RecordOffset,
-                        &RecordLength);
-                    if (RecordLength == 0) {
+                        &RecordLength)) {
                         break;
                     }
-                    if (QMux->TlsState.EarlyDataBufferLength - ProcessOffset < RecordOffset + RecordLength) {
+                    if (QMux->TlsState.EarlyDataBufferLength - EarlyDataBufferOffset <
+                        RecordOffset + RecordLength) {
                         break;
                     }
                     QuicTraceEvent(
@@ -1095,22 +1097,20 @@ QuicQMuxRecvData(
 
                     QuicQMuxRecvFrames(
                         QMux,
-                        QMux->TlsState.EarlyDataBuffer + ProcessOffset + RecordOffset,
+                        QMux->TlsState.EarlyDataBuffer + EarlyDataBufferOffset + RecordOffset,
                         (uint16_t)RecordLength);
-                    QuicConnResetIdleTimeout(Connection);
-                    ProcessOffset += RecordOffset + (uint16_t)RecordLength;
-                } while (ProcessOffset < QMux->TlsState.EarlyDataBufferLength);
-                if (ProcessOffset > 0 && ProcessOffset < QMux->TlsState.EarlyDataBufferLength) {
+                    EarlyDataBufferOffset += RecordOffset + (uint16_t)RecordLength;
+                } while (EarlyDataBufferOffset < QMux->TlsState.EarlyDataBufferLength);
+                if (EarlyDataBufferOffset > 0 && EarlyDataBufferOffset < QMux->TlsState.EarlyDataBufferLength) {
                     //
-                    // Move any remaining data to the beginning of the buffer for the next
-                    // receive.
+                    // Move any remaining data to the recv buffer for the next receive.
                     //
-                    CXPLAT_DBG_ASSERT(QMux->RecvBufferAllocLength >= QMux->TlsState.EarlyDataBufferLength - ProcessOffset);
+                    CXPLAT_DBG_ASSERT(QMux->RecvBufferAllocLength >= QMux->TlsState.EarlyDataBufferLength - EarlyDataBufferOffset);
                     memmove(
                         QMux->RecvBuffer,
-                        QMux->TlsState.EarlyDataBuffer + ProcessOffset,
-                        QMux->TlsState.EarlyDataBufferLength - ProcessOffset);
-                    QMux->RecvBufferLength = QMux->TlsState.EarlyDataBufferLength - ProcessOffset;
+                        QMux->TlsState.EarlyDataBuffer + EarlyDataBufferOffset,
+                        QMux->TlsState.EarlyDataBufferLength - EarlyDataBufferOffset);
+                    QMux->RecvBufferLength = QMux->TlsState.EarlyDataBufferLength - EarlyDataBufferOffset;
                 }
                 QMux->TlsState.EarlyDataBufferLength = 0;
             }
