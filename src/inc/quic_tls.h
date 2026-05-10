@@ -499,7 +499,7 @@ CxPlatTlsWriteEarlyData(
     _In_ CXPLAT_TLS* TlsContext,
     _In_reads_bytes_(*InputBufferLength)
         const uint8_t * InputBuffer,
-    _Inout_ uint32_t * InputBufferLength
+    _Inout_ size_t * InputBufferLength
     );
 
 _IRQL_requires_max_(PASSIVE_LEVEL)

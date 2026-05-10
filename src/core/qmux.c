@@ -171,9 +171,9 @@ QuicQMuxInitializeTls(
              QuicSendFlush(&Connection->Send);
         }
         if (QMux->EarlyDataBufferLength > 0) {
-            uint32_t EarlyDataBufferOffset = 0;
+            size_t EarlyDataBufferOffset = 0;
             while (EarlyDataBufferOffset < QMux->EarlyDataBufferLength) {
-                uint32_t EarlyDataBufferConsumedLength =
+                size_t EarlyDataBufferConsumedLength =
                     QMux->EarlyDataBufferLength - EarlyDataBufferOffset;
                 if (!CxPlatTlsWriteEarlyData(
                         QMux->TLS,

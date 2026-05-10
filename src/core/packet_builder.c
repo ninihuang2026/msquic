@@ -1361,7 +1361,7 @@ QuicPacketBuilderQMuxFinalize(
                 goto Exit;
             }
             if (QMux->EarlyDataBuffer != NULL) {
-                CXPLAT_DBG_ASSERT(QMux->EarlyDataBufferLength > 0);
+                CXPLAT_DBG_ASSERT(QMux->EarlyDataBufferLength <= NewEarlyDataBufferAllocLength);
                 CxPlatCopyMemory(NewEarlyDataBuffer, QMux->EarlyDataBuffer, QMux->EarlyDataBufferLength);
                 CXPLAT_FREE(QMux->EarlyDataBuffer, QUIC_POOL_QMUX_EARLY_DATA_BUFFER);
             }

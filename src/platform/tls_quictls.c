@@ -2529,7 +2529,7 @@ CxPlatTlsHandshake(
                     State->EarlyDataBufferAllocLength - State->EarlyDataBufferLength,
                     &ReadLength);
             CXPLAT_DBG_ASSERT(ReadLength <= State->EarlyDataBufferAllocLength - State->EarlyDataBufferLength);
-            State->EarlyDataBufferLength += ReadLength;
+            State->EarlyDataBufferLength += (uint32_t)ReadLength;
             switch (Ret) {
             case SSL_READ_EARLY_DATA_FINISH:
                 // No more early data is available, or early data is already complete.
@@ -2785,7 +2785,7 @@ CxPlatTlsWriteEarlyData(
     _In_ CXPLAT_TLS* TlsContext,
     _In_reads_bytes_(*InputBufferLength)
         const uint8_t * InputBuffer,
-    _Inout_ uint32_t * InputBufferLength
+    _Inout_ size_t * InputBufferLength
     )
 {
     CXPLAT_DBG_ASSERT(InputBuffer != NULL || *InputBufferLength == 0);
@@ -2794,8 +2794,8 @@ CxPlatTlsWriteEarlyData(
         SSL_write_early_data(
             TlsContext->Ssl,
             InputBuffer,
-            (int)*InputBufferLength,
-            (size_t*)InputBufferLength);
+            *InputBufferLength,
+            InputBufferLength);
      return Ret == 1;
 }
 

@@ -3727,6 +3727,21 @@ CxPlatTlsHandshake(
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
 BOOLEAN
+CxPlatTlsWriteEarlyData(
+    _In_ CXPLAT_TLS* TlsContext,
+    _In_reads_bytes_(*InputBufferLength)
+        const uint8_t * InputBuffer,
+    _Inout_ size_t * InputBufferLength
+    )
+{
+    UNREFERENCED_PARAMETER(TlsContext);
+    UNREFERENCED_PARAMETER(InputBuffer);
+    UNREFERENCED_PARAMETER(InputBufferLength);
+    return FALSE;
+}
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+BOOLEAN
 CxPlatTlsEncrypt(
     _In_ CXPLAT_TLS* TlsContext,
     _Inout_ CXPLAT_TLS_ENCRYPT_BUFFER* Buffer
