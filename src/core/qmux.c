@@ -90,6 +90,10 @@ QuicQMuxUninitialize(
         CXPLAT_FREE(QMux->EarlyDataBuffer, QUIC_POOL_QMUX_EARLY_DATA_BUFFER);
         QMux->EarlyDataBuffer = NULL;
     }
+    if (QMux->TlsState.EarlyDataBuffer != NULL) {
+        CXPLAT_FREE(QMux->TlsState.EarlyDataBuffer, QUIC_POOL_TLS_EARLY_DATA_BUFFER);
+        QMux->TlsState.EarlyDataBuffer = NULL;
+    }
     CxPlatDispatchLockUninitialize(&QMux->TcpReceiveQueueLock);
     CxPlatEventUninitialize(QMux->ConnectEvent);
     CxPlatPoolFree(QMux);
@@ -144,18 +148,18 @@ QuicQMuxInitializeTls(
     QMux->ResumptionTicketLength = 0;
     QMux->ReadEarlyData = IsServer;
     QMux->TlsState.ReadEarlyData = IsServer;
-    QMux->TlsState.EarlyDataBufferAllocLength = IsServer ? QX_TP_MAX_RECORD_SIZE_DEFAULT : 0;
-    if (IsServer) {
+    QMux->TlsState.EarlyDataBufferAllocLength = IsServer ? 4096 : 0;
+    if (QMux->TlsState.EarlyDataBufferAllocLength > 0) {
         QMux->TlsState.EarlyDataBuffer =
             CXPLAT_ALLOC_NONPAGED(
                 QMux->TlsState.EarlyDataBufferAllocLength,
-                QUIC_POOL_QMUX_EARLY_DATA_BUFFER);
+                QUIC_POOL_TLS_EARLY_DATA_BUFFER);
         if (QMux->TlsState.EarlyDataBuffer == NULL) {
             Status = QUIC_STATUS_OUT_OF_MEMORY;
             QuicTraceEvent(
                 AllocFailure,
                 "Allocation of '%s' failed. (%llu bytes)",
-                "QMux TLS early data buffer",
+                "TLS early data buffer",
                 QMux->TlsState.EarlyDataBufferAllocLength);
             goto Error;
         }

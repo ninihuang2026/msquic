@@ -3669,39 +3669,40 @@ CxPlatTlsHandshake(
     if (State->ReadEarlyData) {
         CXPLAT_DBG_ASSERT(TlsContext->IsServer);
         CXPLAT_DBG_ASSERT(State->EarlyDataBuffer != NULL && State->EarlyDataBufferAllocLength > 0);
-        size_t Appended;
+        size_t ReadLength;
         do {
             if (State->EarlyDataBufferLength >= State->EarlyDataBufferAllocLength) {
                 uint32_t NewEarlyDataBufferAllocLength = State->EarlyDataBufferAllocLength * 2;
                 uint8_t* NewEarlyDataBuffer =
                     CXPLAT_ALLOC_NONPAGED(
                         NewEarlyDataBufferAllocLength,
-                        QUIC_POOL_QMUX_EARLY_DATA_BUFFER);
+                        QUIC_POOL_TLS_EARLY_DATA_BUFFER);
                 if (NewEarlyDataBuffer == NULL) {
                     QuicTraceEvent(
                         AllocFailure,
                         "Allocation of '%s' failed. (%llu bytes)",
-                        "New Early Data Buffer",
+                        "TLS early data buffer",
                         NewEarlyDataBufferAllocLength);
                     TlsContext->ResultFlags |= CXPLAT_TLS_RESULT_ERROR;
                     goto Exit;
                 }
                 memcpy(NewEarlyDataBuffer, State->EarlyDataBuffer, State->EarlyDataBufferLength);
-                CXPLAT_FREE(State->EarlyDataBuffer, QUIC_POOL_QMUX_EARLY_DATA_BUFFER);
+                CXPLAT_FREE(State->EarlyDataBuffer, QUIC_POOL_TLS_EARLY_DATA_BUFFER);
                 State->EarlyDataBuffer = NewEarlyDataBuffer;
                 State->EarlyDataBufferAllocLength = NewEarlyDataBufferAllocLength;
             }
-            Appended = 0;
+            ReadLength = 0;
             Ret =
                 SSL_read_early_data(
                     TlsContext->Ssl,
                     State->EarlyDataBuffer + State->EarlyDataBufferLength,
                     State->EarlyDataBufferAllocLength - State->EarlyDataBufferLength,
-                    &Appended);
-            CXPLAT_DBG_ASSERT(Appended <= State->EarlyDataBufferAllocLength - State->EarlyDataBufferLength);
-            State->EarlyDataBufferLength += Appended;
+                    &ReadLength);
+            CXPLAT_DBG_ASSERT(ReadLength <= State->EarlyDataBufferAllocLength - State->EarlyDataBufferLength);
+            State->EarlyDataBufferLength += ReadLength;
             switch (Ret) {
             case SSL_READ_EARLY_DATA_FINISH:
+                // No more early data is available, or early data is already complete.
                 State->ReadEarlyData = FALSE;
                 goto Handshake;
             case SSL_READ_EARLY_DATA_SUCCESS:
@@ -3760,7 +3761,7 @@ CxPlatTlsHandshake(
                 State->ReadEarlyData = FALSE;
                 goto Handshake;
             }
-        } while (Ret == SSL_READ_EARLY_DATA_SUCCESS && Appended > 0);
+        } while (Ret == SSL_READ_EARLY_DATA_SUCCESS && ReadLength > 0);
     }
 
 Handshake:
