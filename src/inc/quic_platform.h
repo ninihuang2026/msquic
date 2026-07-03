@@ -161,13 +161,14 @@ typedef struct CXPLAT_SLIST_ENTRY {
 #define QUIC_POOL_DATAPATH_RSS_CONFIG       'F4cQ' // Qc4F - QUIC Datapath RSS configuration
 #define QUIC_POOL_TLS_AUX_DATA              '05cQ' // Qc50 - QUIC TLS Backing Aux data
 #define QUIC_POOL_TLS_RECORD_ENTRY          '15cQ' // Qc51 - QUIC TLS Backing Record storage
-#define QUIC_POOL_CIDSLIST                  '25cQ' // Qc52 - QUIC CID SLIST Entry
-#define QUIC_POOL_BOUND_ADDRESS_LIST        '35cQ' // Qc53 - QUIC Bound Address List
-#define QUIC_POOL_CANDIDATE_ADDRESS_LIST    '45cQ' // Qc54 - QUIC Candidate Address List
-#define QUIC_POOL_CONN_QMUX                 '55cQ' // Qc55 - QUIC connection QMux
-#define QUIC_POOL_QMUX_RECV_BUFFER          '65cQ' // Qc56 - QUIC Qmux Receive Buffer
-#define QUIC_POOL_QMUX_EARLY_DATA_BUFFER    '75cQ' // Qc57 - QUIC Qmux Early Data Buffer
-#define QUIC_POOL_TLS_EARLY_DATA_BUFFER     '85cQ' // Qc58 - QUIC TLS Early Data Buffer
+#define QUIC_POOL_XDP_MAP_CONFIG            '25cQ' // Qc52 - QUIC XDP Map Config
+#define QUIC_POOL_CIDSLIST                  '35cQ' // Qc53 - QUIC CID SLIST Entry
+#define QUIC_POOL_BOUND_ADDRESS_LIST        '45cQ' // Qc54 - QUIC Bound Address List
+#define QUIC_POOL_CANDIDATE_ADDRESS_LIST    '55cQ' // Qc55 - QUIC Candidate Address List
+#define QUIC_POOL_CONN_QMUX                 '65cQ' // Qc56 - QUIC connection QMux
+#define QUIC_POOL_QMUX_RECV_BUFFER          '75cQ' // Qc57 - QUIC Qmux Receive Buffer
+#define QUIC_POOL_QMUX_EARLY_DATA_BUFFER    '85cQ' // Qc58 - QUIC Qmux Early Data Buffer
+#define QUIC_POOL_TLS_EARLY_DATA_BUFFER     '95cQ' // Qc59 - QUIC TLS Early Data Buffer
 
 typedef enum CXPLAT_THREAD_FLAGS {
     CXPLAT_THREAD_FLAG_NONE               = 0x0000,
@@ -201,6 +202,25 @@ DEFINE_ENUM_FLAG_OPERATORS(CXPLAT_THREAD_FLAGS);
 #if defined(__cplusplus)
 extern "C" {
 #endif
+
+//
+// Small Computation Helpers
+//
+
+//
+// Exponentially weighted moving average
+//
+QUIC_INLINE
+uint64_t
+CxPlatEwma(
+    _In_ uint64_t Average,
+    _In_ uint64_t Sample,
+    _In_ uint64_t Weight
+    )
+{
+    CXPLAT_DBG_ASSERT(Weight > 0);
+    return ((Weight - 1) * Average + Sample) / Weight;
+}
 
 //
 // Library Initialization

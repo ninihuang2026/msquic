@@ -15,6 +15,50 @@ Abstract:
 #include "datapath_xplat.c.clog.h"
 #endif
 
+static
+QUIC_STATUS
+RawOnlyDataPathInitialize(
+    _In_ uint32_t ClientRecvContextLength,
+    _In_ const CXPLAT_UDP_DATAPATH_CALLBACKS* UdpCallbacks,
+    _In_ CXPLAT_WORKER_POOL* WorkerPool,
+    _In_ const CXPLAT_DATAPATH_INIT_CONFIG* InitConfig,
+    _Out_ CXPLAT_DATAPATH** NewDataPath
+    )
+{
+    CXPLAT_DBG_ASSERT(InitConfig->XdpMapConfigs != NULL);
+
+    CXPLAT_DATAPATH* Datapath =
+        CXPLAT_ALLOC_PAGED(sizeof(CXPLAT_DATAPATH), QUIC_POOL_DATAPATH);
+    if (Datapath == NULL) {
+        QuicTraceEvent(
+            AllocFailure,
+            "Allocation of '%s' failed. (%llu bytes)",
+            "CXPLAT_DATAPATH (raw-only)",
+            sizeof(CXPLAT_DATAPATH));
+        return QUIC_STATUS_OUT_OF_MEMORY;
+    }
+    CxPlatZeroMemory(Datapath, sizeof(CXPLAT_DATAPATH));
+    Datapath->UdpHandlers = *UdpCallbacks;
+    Datapath->WorkerPool = WorkerPool;
+
+    RawDataPathInitialize(
+        ClientRecvContextLength,
+        Datapath,
+        WorkerPool,
+        InitConfig,
+        &Datapath->RawDataPath);
+    if (Datapath->RawDataPath == NULL) {
+        QuicTraceLogVerbose(
+            DatapathRawInitFailRawOnly,
+            "[  dp] Raw-only mode: raw datapath required but failed to initialize");
+        CXPLAT_FREE(Datapath, QUIC_POOL_DATAPATH);
+        *NewDataPath = NULL;
+        return QUIC_STATUS_NOT_SUPPORTED;
+    }
+    *NewDataPath = Datapath;
+    return QUIC_STATUS_SUCCESS;
+}
+
 _IRQL_requires_max_(PASSIVE_LEVEL)
 QUIC_STATUS
 CxPlatDataPathInitialize(
@@ -32,29 +76,48 @@ CxPlatDataPathInitialize(
         goto Error;
     }
 
-    Status =
-        DataPathInitialize(
+    if (InitConfig->XdpMapConfigCount > 0) {
+        if (UdpCallbacks == NULL ||
+            UdpCallbacks->Receive == NULL || UdpCallbacks->Unreachable == NULL) {
+            Status = QUIC_STATUS_INVALID_PARAMETER;
+            goto Error;
+        }
+        Status =
+            RawOnlyDataPathInitialize(
+                ClientRecvContextLength,
+                UdpCallbacks,
+                WorkerPool,
+                InitConfig,
+                NewDataPath);
+        if (QUIC_FAILED(Status)) {
+            goto Error;
+        }
+    } else {
+        Status =
+            DataPathInitialize(
+                ClientRecvContextLength,
+                UdpCallbacks,
+                TcpCallbacks,
+                WorkerPool,
+                InitConfig,
+                NewDataPath);
+        if (QUIC_FAILED(Status)) {
+            QuicTraceLogVerbose(
+                DatapathInitFail,
+                "[  dp] Failed to initialize datapath, status:%d", Status);
+            goto Error;
+        }
+
+        //
+        // Best effort try to initialize the raw datapath.
+        //
+        RawDataPathInitialize(
             ClientRecvContextLength,
-            UdpCallbacks,
-            TcpCallbacks,
+            *NewDataPath,
             WorkerPool,
             InitConfig,
-            NewDataPath);
-    if (QUIC_FAILED(Status)) {
-        QuicTraceLogVerbose(
-            DatapathInitFail,
-            "[  dp] Failed to initialize datapath, status:%d", Status);
-        goto Error;
+            &((*NewDataPath)->RawDataPath));
     }
-
-    //
-    // Best effort try to initialize the raw datapath.
-    //
-    RawDataPathInitialize(
-        ClientRecvContextLength,
-        *NewDataPath,
-        WorkerPool,
-        &((*NewDataPath)->RawDataPath));
 
 Error:
 
@@ -67,10 +130,30 @@ CxPlatDataPathUninitialize(
     _In_ CXPLAT_DATAPATH* Datapath
     )
 {
+    BOOLEAN IsRawDatapathOnly = CxPlatDpRawIsRawDatapathOnly(Datapath->RawDataPath);
     if (Datapath->RawDataPath) {
         RawDataPathUninitialize(Datapath->RawDataPath);
     }
-    DataPathUninitialize(Datapath);
+    if (IsRawDatapathOnly) {
+        //
+        // The base datapath was not initialized, free directly.
+        //
+        CXPLAT_FREE(Datapath, QUIC_POOL_DATAPATH);
+    } else {
+        DataPathUninitialize(Datapath);
+    }
+}
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+uint32_t
+CxPlatDataPathGetXdpRuleCount(
+    _In_ CXPLAT_DATAPATH* Datapath
+    )
+{
+    if (Datapath->RawDataPath == NULL) {
+        return 0;
+    }
+    return CxPlatDpRawGetTotalRuleCount(Datapath->RawDataPath);
 }
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
@@ -125,7 +208,13 @@ CxPlatSocketCreateUdp(
     )
 {
     QUIC_STATUS Status = QUIC_STATUS_SUCCESS;
-    BOOLEAN CreateRaw = Config->Flags & CXPLAT_SOCKET_FLAG_XDP;
+    BOOLEAN IsRawDatapathOnly = CxPlatDpRawIsRawDatapathOnly(Datapath->RawDataPath);
+
+    //
+    // When the raw (XDP) datapath is the only datapath, create raw sockets for all cxplat sockets
+    // and treat any failure as fatal (no fallback to OS sockets, no QTIP TCP port retry).
+    //
+    BOOLEAN CreateRaw = IsRawDatapathOnly || (Config->Flags & CXPLAT_SOCKET_FLAG_XDP);
 
     //
     // In a real production (XDP/QTIP+XDP) scenario, we never have to loop more than once
@@ -151,6 +240,7 @@ CxPlatSocketCreateUdp(
         BOOLEAN CibirRequested = (Config->CibirIdLength > 0);
 
         (*NewSocket)->RawSocketAvailable = 0;
+        CXPLAT_DBG_ASSERT(!IsRawDatapathOnly || Datapath->RawDataPath);
         if (CreateRaw && Datapath->RawDataPath) {
             Status =
                 RawSocketCreateUdp(
@@ -162,17 +252,28 @@ CxPlatSocketCreateUdp(
                 QuicTraceLogVerbose(
                     RawSockCreateFail,
                     "[sock] Failed to create raw socket, status:%d", Status);
-                BOOLEAN IsWildcardAddr = Config->LocalAddress == NULL || QuicAddrIsWildCard(Config->LocalAddress);
-                if (IsWildcardAddr && RequiresQtip) {
+
+                if (IsRawDatapathOnly) {
+                    //
+                    // Raw-only mode: no fallback allowed.
+                    //
+                    CxPlatSocketDelete(*NewSocket);
+                    *NewSocket = NULL;
+                    goto Error;
+                }
+
+                BOOLEAN IsServerSocket = !(*NewSocket)->HasFixedRemoteAddress;
+                if (IsServerSocket && RequiresQtip) {
                     //
                     // This retry loop is purely for QTIP listener sockets that try to reserve both a UDP/TCP port,
                     // which may run into a port collision for TCP if the UDP ephemeral port collides with something
                     // in the TCP pool. So just try it again.
                     //
                     CxPlatSocketDelete(*NewSocket);
+                    *NewSocket = NULL;
                     continue;
                 }
-                if ((!RequiresQtip && !CibirRequested) || ((*NewSocket)->HasFixedRemoteAddress && CibirRequested && !RequiresQtip)) {
+                if ((!RequiresQtip && !CibirRequested) || (!IsServerSocket && CibirRequested && !RequiresQtip)) {
                     //
                     // Allow fallback to OS UDP sockets in these 2 cases only:
                     //  - XDP with no QTIP and no CIBIR.
@@ -187,6 +288,7 @@ CxPlatSocketCreateUdp(
                     Status = QUIC_STATUS_SUCCESS;
                 } else {
                     CxPlatSocketDelete(*NewSocket);
+                    *NewSocket = NULL;
                 }
                 goto Error;
             }
@@ -195,6 +297,7 @@ CxPlatSocketCreateUdp(
                 ErrNoXdpForQtip,
                 "[sock] Error: app requested QTIP but XDP not enabled/available/initialized.");
             CxPlatSocketDelete(*NewSocket);
+            *NewSocket = NULL;
             Status = QUIC_STATUS_INVALID_STATE;
             goto Error;
         } else if (CibirRequested) {

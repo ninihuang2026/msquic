@@ -63,6 +63,7 @@ typedef struct CXPLAT_DATAPATH_RAW {
     BOOLEAN Freed : 1;
 #endif
     BOOLEAN ReserveAuxTcpSockForQtip; // Whether or not we create an auxiliary TCP socket.
+    BOOLEAN RawDatapathOnly;       // Raw datapath is the only datapath; OS socket creation is skipped (e.g. XDP map mode, DPDK).
 
 } CXPLAT_DATAPATH_RAW;
 
@@ -148,7 +149,7 @@ CxPlatDpRawUpdatePollingIdleTimeout(
 // that it should update any filtering rules as necessary.
 //
 _IRQL_requires_max_(PASSIVE_LEVEL)
-void
+QUIC_STATUS
 CxPlatDpRawPlumbRulesOnSocket(
     _In_ CXPLAT_SOCKET_RAW* Socket,
     _In_ BOOLEAN IsCreated
