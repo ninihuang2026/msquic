@@ -3649,7 +3649,7 @@
               opcode="Connection"
               symbol="QuicConnRecvTcpData"
               template="tid_CONN_COUNT_COUNT"
-              value="5200"
+              value="5205"
               />
           <event
               keywords="ut:Connection ut:DataFlow"
@@ -3658,7 +3658,7 @@
               opcode="Connection"
               symbol="QuicConnRecvPacket"
               template="tid_CONN_COUNT"
-              value="5201"
+              value="5206"
               />
           <event
               keywords="ut:Connection ut:DataFlow"
@@ -3667,7 +3667,7 @@
               opcode="Connection"
               symbol="QuicConnEarlyDataStatus"
               template="tid_CONN_MESSAGE"
-              value="5202"
+              value="5207"
               />
           <!-- 6144 - 7167 | Stream Events -->
           <event
