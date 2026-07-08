@@ -2285,7 +2285,7 @@ QuicConnStart(
     if (!QuicConnIsQMux(Connection)) {
         CXPLAT_UDP_CONFIG UdpConfig = {0};
         UdpConfig.LocalAddress = Connection->State.LocalAddressSet ? &Path->Route.LocalAddress : NULL;
-        UdpConfig.RemoteAddress = &Path->Route.RemoteAddress;
+        UdpConfig.RemoteAddress = Connection->State.ShareBinding ? NULL : &Path->Route.RemoteAddress;
         UdpConfig.Flags = CXPLAT_SOCKET_FLAG_NONE;
         UdpConfig.InterfaceIndex = Connection->State.LocalInterfaceSet ? (uint32_t)Path->Route.LocalAddress.Ipv6.sin6_scope_id : 0; // NOLINT(google-readability-casting)
         UdpConfig.PartitionIndex = QuicPartitionIdGetIndex(Connection->PartitionID);
@@ -7338,13 +7338,13 @@ QuicConnAddBoundAddress(
     CxPlatCopyMemory(&Bound->Address, Param, sizeof(QUIC_ADDR));
 
     BOOLEAN PortUnspecified = QuicAddrGetPort(Param) == 0;
-    QUIC_ADDR BindingLocalAddress = {0};
-    QuicAddrSetFamily(&BindingLocalAddress, QUIC_ADDRESS_FAMILY_INET6);
-    QuicAddrSetPort(&BindingLocalAddress,
-        PortUnspecified ? 0 : QuicAddrGetPort(Param));
+    // QUIC_ADDR BindingLocalAddress = {0};
+    // QuicAddrSetFamily(&BindingLocalAddress, QUIC_ADDRESS_FAMILY_INET6);
+    // QuicAddrSetPort(&BindingLocalAddress,
+    //     PortUnspecified ? 0 : QuicAddrGetPort(Param));
 
     CXPLAT_UDP_CONFIG UdpConfig = {0};
-    UdpConfig.LocalAddress = &BindingLocalAddress;
+    UdpConfig.LocalAddress = Param;
     UdpConfig.RemoteAddress = NULL;
     UdpConfig.Flags = CXPLAT_SOCKET_FLAG_NONE;
     UdpConfig.InterfaceIndex = 0;
@@ -7377,6 +7377,7 @@ QuicConnAddBoundAddress(
     }
  
     if (PortUnspecified) {
+        QUIC_ADDR BindingLocalAddress = {0};
         QuicBindingGetLocalAddress(Bound->Binding, &BindingLocalAddress);
         QuicAddrSetPort(
             &Bound->Address,
