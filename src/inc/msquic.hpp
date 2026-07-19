@@ -1687,6 +1687,21 @@ struct MsQuicAutoAcceptListener : public MsQuicListener {
         ConnectionContext(_ConnectionContext)
     { }
 
+#ifdef QUIC_API_ENABLE_PREVIEW_FEATURES
+    MsQuicAutoAcceptListener(
+        _In_ const MsQuicRegistration& Registration,
+        _In_ bool IsQmux,
+        _In_ const MsQuicConfiguration& Config,
+        _In_ MsQuicConnectionCallback* _ConnectionHandler,
+        _In_ void* _ConnectionContext = nullptr
+        ) noexcept :
+        MsQuicListener(Registration, IsQmux, CleanUpManual, ListenerCallback, this),
+        Configuration(&Config),
+        ConnectionHandler(_ConnectionHandler),
+        ConnectionContext(_ConnectionContext)
+    { }
+#endif // QUIC_API_ENABLE_PREVIEW_FEATURES
+
 private:
 
     static

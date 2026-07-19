@@ -560,7 +560,12 @@ QuicSendWriteFrames(
     uint8_t PrevFrameCount = Builder->Metadata->FrameCount;
     BOOLEAN RanOutOfRoom = FALSE;
 
-    BOOLEAN IsCongestionControlBlocked = !QuicPacketBuilderHasAllowance(Builder);
+    //
+    // QMux connections run over TCP and have no PathID, and therefore no
+    // congestion control of their own, so they are never CC blocked.
+    //
+    BOOLEAN IsCongestionControlBlocked =
+        !QuicConnIsQMux(Connection) && !QuicPacketBuilderHasAllowance(Builder);
 
     BOOLEAN Is1RttEncryptionLevel =
         Builder->Metadata->Flags.KeyType == QUIC_PACKET_KEY_1_RTT ||
@@ -1858,8 +1863,8 @@ QuicSendFlush(
 
 #if DEBUG
     uint32_t DeadlockDetection = 0;
-    uint32_t PrevSendFlags = UINT32_MAX;        // N-1
-    uint32_t PrevPrevSendFlags = UINT32_MAX;    // N-2
+    uint64_t PrevSendFlags = UINT64_MAX;        // N-1
+    uint64_t PrevPrevSendFlags = UINT64_MAX;    // N-2
 #endif
 
     QUIC_SEND_RESULT Result = QUIC_SEND_INCOMPLETE;

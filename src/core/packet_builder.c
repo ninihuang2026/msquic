@@ -167,7 +167,11 @@ QuicPacketBuilderCleanup(
 {
     CXPLAT_DBG_ASSERT(Builder->SendData == NULL);
 
-    if (Builder->PacketBatchSent && Builder->PacketBatchRetransmittable) {
+    //
+    // QMux connections have no PathID, and therefore no loss detection timer.
+    //
+    if (!QuicConnIsQMux(Builder->Connection) &&
+        Builder->PacketBatchSent && Builder->PacketBatchRetransmittable) {
         QuicLossDetectionUpdateTimer(&Builder->Path->PathID->LossDetection, FALSE);
     }
 
@@ -664,7 +668,7 @@ _Success_(return != FALSE)
 BOOLEAN
 QuicPacketBuilderGetPacketTypeAndKeyForControlFrames(
     _In_ const QUIC_PACKET_BUILDER* Builder,
-    _In_ uint32_t SendFlags,
+    _In_ uint64_t SendFlags,
     _Out_ QUIC_PACKET_KEY_TYPE* PacketKeyType
     )
 {
@@ -788,7 +792,7 @@ BOOLEAN
 QuicPacketBuilderPrepareForControlFrames(
     _Inout_ QUIC_PACKET_BUILDER* Builder,
     _In_ BOOLEAN IsTailLossProbe,
-    _In_ uint32_t SendFlags
+    _In_ uint64_t SendFlags
     )
 {
     if (QuicConnIsQMux(Builder->Connection)) {

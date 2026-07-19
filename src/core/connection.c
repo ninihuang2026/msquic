@@ -1530,13 +1530,17 @@ QuicConnTryClose(
             //
             // Enter 'closing period' to wait for a (optional) connection close
             // response. During that time, the connection close will be re-transmitted
-            // when packets are received.
+            // when packets are received. QMux connections have no PathID, and
+            // therefore no loss detection, to compute a PTO from, so they fall
+            // back to an RTT-based estimate.
             //
             uint64_t Pto =
-                QuicLossDetectionComputeProbeTimeout(
-                    &Connection->Paths[0].PathID->LossDetection,
-                    &Connection->Paths[0],
-                    QUIC_CLOSE_PTO_COUNT);
+                QuicConnIsQMux(Connection) ?
+                    CXPLAT_MAX(MS_TO_US(15), Connection->Paths[0].SmoothedRtt * 2) :
+                    QuicLossDetectionComputeProbeTimeout(
+                        &Connection->Paths[0].PathID->LossDetection,
+                        &Connection->Paths[0],
+                        QUIC_CLOSE_PTO_COUNT);
             QuicConnTimerSet(
                 Connection,
                 QUIC_CONN_TIMER_SHUTDOWN,
@@ -3073,18 +3077,24 @@ QuicConnProcessPeerTransportParameters(
         "Peer Transport Parameters Set");
     Connection->State.PeerTransportParameterValid = TRUE;
 
-    if ((Connection->PeerTransportParams.Flags & QUIC_TP_FLAG_INITIAL_MAX_PATH_ID)) {
-        QuicPathIDSetInitializeTransportParameters(&Connection->PathIDs,
-            (Connection->PeerTransportParams.Flags & QUIC_TP_FLAG_ACTIVE_CONNECTION_ID_LIMIT) ?
-                (uint8_t)Connection->PeerTransportParams.ActiveConnectionIdLimit :
-                QUIC_TP_ACTIVE_CONNECTION_ID_LIMIT_DEFAULT,
-            (uint32_t)Connection->PeerTransportParams.InitialMaxPathId);
-    } else {
-        QuicPathIDSetInitializeTransportParameters(&Connection->PathIDs,
-            (Connection->PeerTransportParams.Flags & QUIC_TP_FLAG_ACTIVE_CONNECTION_ID_LIMIT) ?
-                (uint8_t)Connection->PeerTransportParams.ActiveConnectionIdLimit :
-                QUIC_TP_ACTIVE_CONNECTION_ID_LIMIT_DEFAULT,
-            UINT32_MAX);
+    //
+    // QMux connections run over TCP and never create PathIDs, so there is no
+    // PathID set to initialize.
+    //
+    if (!QuicConnIsQMux(Connection)) {
+        if ((Connection->PeerTransportParams.Flags & QUIC_TP_FLAG_INITIAL_MAX_PATH_ID)) {
+            QuicPathIDSetInitializeTransportParameters(&Connection->PathIDs,
+                (Connection->PeerTransportParams.Flags & QUIC_TP_FLAG_ACTIVE_CONNECTION_ID_LIMIT) ?
+                    (uint8_t)Connection->PeerTransportParams.ActiveConnectionIdLimit :
+                    QUIC_TP_ACTIVE_CONNECTION_ID_LIMIT_DEFAULT,
+                (uint32_t)Connection->PeerTransportParams.InitialMaxPathId);
+        } else {
+            QuicPathIDSetInitializeTransportParameters(&Connection->PathIDs,
+                (Connection->PeerTransportParams.Flags & QUIC_TP_FLAG_ACTIVE_CONNECTION_ID_LIMIT) ?
+                    (uint8_t)Connection->PeerTransportParams.ActiveConnectionIdLimit :
+                    QUIC_TP_ACTIVE_CONNECTION_ID_LIMIT_DEFAULT,
+                UINT32_MAX);
+        }
     }
 
     if (Connection->PeerTransportParams.Flags & QUIC_TP_FLAG_OBSERVED_ADDRESS) {
@@ -9818,7 +9828,13 @@ QuicConnApplyNewSettings(
         }
 
         QuicSendApplyNewSettings(&Connection->Send, &Connection->Settings);
-        QuicCongestionControlInitialize(&Connection->Paths[0].PathID->CongestionControl, &Connection->Settings);
+        if (!QuicConnIsQMux(Connection)) {
+            //
+            // QMux connections run over TCP and have no PathID (and therefore
+            // no congestion control) of their own.
+            //
+            QuicCongestionControlInitialize(&Connection->Paths[0].PathID->CongestionControl, &Connection->Settings);
+        }
 
         if (QuicConnIsClient(Connection) && Connection->Settings.IsSet.VersionSettings) {
             Connection->Stats.QuicVersion = Connection->Settings.VersionSettings->FullyDeployedVersions[0];
