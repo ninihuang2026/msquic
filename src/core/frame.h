@@ -168,9 +168,39 @@ typedef QUIC_VAR_INT QUIC_FRAME_TYPE;
 #define QUIC_FRAME_PUNCH_ME_NOW_V6      ((QUIC_FRAME_TYPE)0x3d7e93LL)
 #define QUIC_FRAME_REMOVE_ADDRESS       ((QUIC_FRAME_TYPE)0x3d7e94LL)
 
+//
+// Multipath frame types, per draft-ietf-quic-multipath-21 (suggested codepoints).
+// Kept as #defines (rather than seera-main's enum) because QUIC_FRAME_TYPE must
+// remain a 64-bit QUIC_VAR_INT to hold the QMux (QX) magic frame types below.
+//
+#define QUIC_FRAME_PATH_ACK             ((QUIC_FRAME_TYPE)0x3eULL) // to 0x3f
+#define QUIC_FRAME_PATH_ACK_1           ((QUIC_FRAME_TYPE)0x3fULL)
+#define QUIC_FRAME_PATH_ABANDON         ((QUIC_FRAME_TYPE)0x3e75ULL)
+#define QUIC_FRAME_PATH_BACKUP          ((QUIC_FRAME_TYPE)0x3e76ULL) // draft: PATH_STATUS_BACKUP
+#define QUIC_FRAME_PATH_AVAILABLE       ((QUIC_FRAME_TYPE)0x3e77ULL) // draft: PATH_STATUS_AVAILABLE
+#define QUIC_FRAME_PATH_NEW_CONNECTION_ID    ((QUIC_FRAME_TYPE)0x3e78ULL)
+#define QUIC_FRAME_PATH_RETIRE_CONNECTION_ID ((QUIC_FRAME_TYPE)0x3e79ULL)
+#define QUIC_FRAME_MAX_PATH_ID          ((QUIC_FRAME_TYPE)0x3e7aULL)
+#define QUIC_FRAME_PATHS_BLOCKED        ((QUIC_FRAME_TYPE)0x3e7bULL)
+#define QUIC_FRAME_PATH_CIDS_BLOCKED    ((QUIC_FRAME_TYPE)0x3e7cULL)
+#define QUIC_FRAME_MAX_SUPPORTED        ((QUIC_FRAME_TYPE)0x3e7dULL)
+
+//
+// QMux (QX) frame types. These are 64-bit magic values outside the standard
+// frame-type space; they are carried over the QMux channel and never recorded
+// in QUIC sent-packet metadata, so they are excluded from QUIC_FRAME_MAX_SUPPORTED.
+//
 #define QX_FRAME_TRANSPORT_PARAMETERS   ((QUIC_FRAME_TYPE)0x3f5153300d0a0d0aULL)
 #define QX_FRAME_PING                   ((QUIC_FRAME_TYPE)0x348c67529ef8c7bdULL)
 #define QX_FRAME_PING_1                 ((QUIC_FRAME_TYPE)0x348c67529ef8c7beULL)
+
+CXPLAT_STATIC_ASSERT(
+    QUIC_FRAME_MAX_SUPPORTED <= (uint64_t)UINT32_MAX,
+    "Sent packet metadata 'Type' field above assumes frames types fit in 32-bits");
+
+CXPLAT_STATIC_ASSERT(
+    QUIC_FRAME_MAX_SUPPORTED <= (uint64_t)UINT32_MAX,
+    "Logging assumes frames types fit in 32-bits");
 
 #define QUIC_FRAME_IS_KNOWN(X) \
     (X <= QUIC_FRAME_HANDSHAKE_DONE || \
@@ -180,15 +210,20 @@ typedef QUIC_VAR_INT QUIC_FRAME_TYPE;
       X == QUIC_FRAME_TIMESTAMP || \
       X == QUIC_FRAME_OBSERVED_ADDRESS_V4 || X == QUIC_FRAME_OBSERVED_ADDRESS_V6 || \
      (X >= QUIC_FRAME_ADD_ADDRESS_V4 && X <= QUIC_FRAME_REMOVE_ADDRESS) || \
+     (X >= QUIC_FRAME_PATH_ACK && X <= QUIC_FRAME_PATH_ACK_1) || \
+      X == QUIC_FRAME_PATH_ABANDON || \
+     (X >= QUIC_FRAME_PATH_BACKUP && X <= QUIC_FRAME_PATH_RETIRE_CONNECTION_ID) || \
+     (X >= QUIC_FRAME_MAX_PATH_ID && X <= QUIC_FRAME_PATH_CIDS_BLOCKED) || \
       X == QX_FRAME_TRANSPORT_PARAMETERS || X == QX_FRAME_PING || X == QX_FRAME_PING_1 \
     )
 
 //
-// QUIC_FRAME_ACK Encoding/Decoding
+// QUIC_FRAME_ACK/QUIC_FRAME_PATH_ACK Encoding/Decoding
 //
 
 typedef struct QUIC_ACK_EX {
 
+    QUIC_VAR_INT PathId;
     QUIC_VAR_INT LargestAcknowledged;
     QUIC_VAR_INT AckDelay;
     QUIC_VAR_INT AdditionalAckBlockCount;
@@ -214,6 +249,8 @@ typedef struct QUIC_ACK_ECN_EX {
 _Success_(return != FALSE)
 BOOLEAN
 QuicAckFrameEncode(
+    _In_ BOOLEAN MultipathNegotiated,
+    _In_ uint32_t PathId,
     _In_ const QUIC_RANGE * const AckBlocks,
     _In_ uint64_t AckDelay,
     _In_opt_ QUIC_ACK_ECN_EX* Ecn,
@@ -232,6 +269,7 @@ QuicAckFrameDecode(
         const uint8_t * const Buffer,
     _Inout_ uint16_t* Offset,
     _Out_ BOOLEAN* InvalidFrame,
+    _Out_ QUIC_VAR_INT* PathId,
     _Inout_ QUIC_RANGE* AckRanges, // Pre-Initialized by caller
     _When_(FrameType == QUIC_FRAME_ACK_1, _Out_)
         QUIC_ACK_ECN_EX* Ecn,
@@ -657,12 +695,13 @@ QuicStreamsBlockedFrameDecode(
     );
 
 //
-// QUIC_FRAME_NEW_CONNECTION_ID Encoding/Decoding
+// QUIC_FRAME_NEW_CONNECTION_ID/QUIC_FRAME_PATH_NEW_CONNECTION_ID Encoding/Decoding
 //
 
 typedef struct QUIC_NEW_CONNECTION_ID_EX {
 
     uint8_t Length;
+    QUIC_VAR_INT PathID;
     QUIC_VAR_INT Sequence;
     QUIC_VAR_INT RetirePriorTo;
     uint8_t Buffer[QUIC_MAX_CONNECTION_ID_LENGTH_V1 + QUIC_STATELESS_RESET_TOKEN_LENGTH];
@@ -674,6 +713,7 @@ typedef struct QUIC_NEW_CONNECTION_ID_EX {
 _Success_(return != FALSE)
 BOOLEAN
 QuicNewConnectionIDFrameEncode(
+    _In_ QUIC_FRAME_TYPE FrameType,
     _In_ const QUIC_NEW_CONNECTION_ID_EX * const Frame,
     _Inout_ uint16_t* Offset,
     _In_ uint16_t BufferLength,
@@ -684,6 +724,7 @@ QuicNewConnectionIDFrameEncode(
 _Success_(return != FALSE)
 BOOLEAN
 QuicNewConnectionIDFrameDecode(
+    _In_ QUIC_FRAME_TYPE FrameType,
     _In_ uint16_t BufferLength,
     _In_reads_bytes_(BufferLength)
         const uint8_t * const Buffer,
@@ -697,6 +738,7 @@ QuicNewConnectionIDFrameDecode(
 
 typedef struct QUIC_RETIRE_CONNECTION_ID_EX {
 
+    QUIC_VAR_INT PathID;
     QUIC_VAR_INT Sequence;
 
 } QUIC_RETIRE_CONNECTION_ID_EX;
@@ -704,6 +746,7 @@ typedef struct QUIC_RETIRE_CONNECTION_ID_EX {
 _Success_(return != FALSE)
 BOOLEAN
 QuicRetireConnectionIDFrameEncode(
+    _In_ QUIC_FRAME_TYPE FrameType,
     _In_ const QUIC_RETIRE_CONNECTION_ID_EX * const Frame,
     _Inout_ uint16_t* Offset,
     _In_ uint16_t BufferLength,
@@ -714,6 +757,7 @@ QuicRetireConnectionIDFrameEncode(
 _Success_(return != FALSE)
 BOOLEAN
 QuicRetireConnectionIDFrameDecode(
+    _In_ QUIC_FRAME_TYPE FrameType,
     _In_ uint16_t BufferLength,
     _In_reads_bytes_(BufferLength)
         const uint8_t * const Buffer,
@@ -757,6 +801,190 @@ QuicPathChallengeFrameDecode(
         const uint8_t * const Buffer,
     _Inout_ uint16_t* Offset,
     _Out_ QUIC_PATH_CHALLENGE_EX* Frame
+    );
+
+//
+// QUIC_FRAME_PATH_ABANDON Encoding/Decoding
+//
+
+typedef struct QUIC_PATH_ABANDON_EX {
+
+    QUIC_VAR_INT PathID;
+    QUIC_VAR_INT ErrorCode;
+
+} QUIC_PATH_ABANDON_EX;
+
+_Success_(return != FALSE)
+BOOLEAN
+QuicPathAbandonFrameEncode(
+    _In_ const QUIC_PATH_ABANDON_EX * const Frame,
+    _Inout_ uint16_t* Offset,
+    _In_ uint16_t BufferLength,
+    _Out_writes_to_(BufferLength, *Offset)
+        uint8_t* Buffer
+    );
+
+_Success_(return != FALSE)
+BOOLEAN
+QuicPathAbandonFrameDecode(
+    _In_ uint16_t BufferLength,
+    _In_reads_bytes_(BufferLength)
+        const uint8_t * const Buffer,
+    _Inout_ uint16_t* Offset,
+    _Out_ QUIC_PATH_ABANDON_EX* Frame
+    );
+
+//
+// QUIC_FRAME_PATH_BACKUP Encoding/Decoding
+//
+
+typedef struct QUIC_PATH_BACKUP_EX {
+
+    QUIC_VAR_INT PathID;
+    QUIC_VAR_INT StatusSequenceNumber;
+
+} QUIC_PATH_BACKUP_EX;
+
+_Success_(return != FALSE)
+BOOLEAN
+QuicPathBackupFrameEncode(
+    _In_ const QUIC_PATH_BACKUP_EX * const Frame,
+    _Inout_ uint16_t* Offset,
+    _In_ uint16_t BufferLength,
+    _Out_writes_to_(BufferLength, *Offset)
+        uint8_t* Buffer
+    );
+
+_Success_(return != FALSE)
+BOOLEAN
+QuicPathBackupFrameDecode(
+    _In_ uint16_t BufferLength,
+    _In_reads_bytes_(BufferLength)
+        const uint8_t * const Buffer,
+    _Inout_ uint16_t* Offset,
+    _Out_ QUIC_PATH_BACKUP_EX* Frame
+    );
+
+//
+// QUIC_FRAME_PATH_AVAILABLE Encoding/Decoding
+//
+
+typedef struct QUIC_PATH_AVAILABLE_EX {
+
+    QUIC_VAR_INT PathID;
+    QUIC_VAR_INT StatusSequenceNumber;
+
+} QUIC_PATH_AVAILABLE_EX;
+
+_Success_(return != FALSE)
+BOOLEAN
+QuicPathAvailableFrameEncode(
+    _In_ const QUIC_PATH_AVAILABLE_EX * const Frame,
+    _Inout_ uint16_t* Offset,
+    _In_ uint16_t BufferLength,
+    _Out_writes_to_(BufferLength, *Offset)
+        uint8_t* Buffer
+    );
+
+_Success_(return != FALSE)
+BOOLEAN
+QuicPathAvailableFrameDecode(
+    _In_ uint16_t BufferLength,
+    _In_reads_bytes_(BufferLength)
+        const uint8_t * const Buffer,
+    _Inout_ uint16_t* Offset,
+    _Out_ QUIC_PATH_AVAILABLE_EX* Frame
+    );
+
+//
+// QUIC_FRAME_MAX_PATH_ID Encoding/Decoding
+//
+
+typedef struct QUIC_MAX_PATH_ID_EX {
+
+    QUIC_VAR_INT MaximumPathID;
+
+} QUIC_MAX_PATH_ID_EX;
+
+_Success_(return != FALSE)
+BOOLEAN
+QuicMaxPathIDFrameEncode(
+    _In_ const QUIC_MAX_PATH_ID_EX * const Frame,
+    _Inout_ uint16_t* Offset,
+    _In_ uint16_t BufferLength,
+    _Out_writes_to_(BufferLength, *Offset)
+        uint8_t* Buffer
+    );
+
+_Success_(return != FALSE)
+BOOLEAN
+QuicMaxPathIDFrameDecode(
+    _In_ uint16_t BufferLength,
+    _In_reads_bytes_(BufferLength)
+        const uint8_t * const Buffer,
+    _Inout_ uint16_t* Offset,
+    _Out_ QUIC_MAX_PATH_ID_EX* Frame
+    );
+
+//
+// QUIC_FRAME_PATHS_BLOCKED Encoding/Decoding
+//
+
+typedef struct QUIC_PATHS_BLOCKED_EX {
+
+    QUIC_VAR_INT MaximumPathID;
+
+} QUIC_PATHS_BLOCKED_EX;
+
+_Success_(return != FALSE)
+BOOLEAN
+QuicPathsBlockedFrameEncode(
+    _In_ const QUIC_PATHS_BLOCKED_EX * const Frame,
+    _Inout_ uint16_t* Offset,
+    _In_ uint16_t BufferLength,
+    _Out_writes_to_(BufferLength, *Offset)
+        uint8_t* Buffer
+    );
+
+_Success_(return != FALSE)
+BOOLEAN
+QuicPathsBlockedFrameDecode(
+    _In_ uint16_t BufferLength,
+    _In_reads_bytes_(BufferLength)
+        const uint8_t * const Buffer,
+    _Inout_ uint16_t* Offset,
+    _Out_ QUIC_PATHS_BLOCKED_EX* Frame
+    );
+
+//
+// QUIC_FRAME_PATH_CIDS_BLOCKED Encoding/Decoding
+//
+
+typedef struct QUIC_PATH_CIDS_BLOCKED_EX {
+
+    QUIC_VAR_INT PathID;
+    QUIC_VAR_INT NextSequenceNumber;
+
+} QUIC_PATH_CIDS_BLOCKED_EX;
+
+_Success_(return != FALSE)
+BOOLEAN
+QuicPathCidsBlockedFrameEncode(
+    _In_ const QUIC_PATH_CIDS_BLOCKED_EX * const Frame,
+    _Inout_ uint16_t* Offset,
+    _In_ uint16_t BufferLength,
+    _Out_writes_to_(BufferLength, *Offset)
+        uint8_t* Buffer
+    );
+
+_Success_(return != FALSE)
+BOOLEAN
+QuicPathCidsBlockedFrameDecode(
+    _In_ uint16_t BufferLength,
+    _In_reads_bytes_(BufferLength)
+        const uint8_t * const Buffer,
+    _Inout_ uint16_t* Offset,
+    _Out_ QUIC_PATH_CIDS_BLOCKED_EX* Frame
     );
 
 //
@@ -905,6 +1133,7 @@ QuicTimestampFrameDecode(
     _Inout_ uint16_t* Offset,
     _Out_ QUIC_TIMESTAMP_EX* Frame
     );
+
 
 //
 // QUIC_OBSERVED_ADDRESS Encoding/Decoding
@@ -1142,9 +1371,24 @@ QuicStreamFrameSkip(
         QUIC_STOP_SENDING_EX Frame;
         return QuicStopSendingFrameDecode(BufferLength, Buffer, Offset, &Frame);
     }
-    default: { // QUIC_FRAME_STREAM*
+    case QUIC_FRAME_RELIABLE_RESET_STREAM: {
+        QUIC_RELIABLE_RESET_STREAM_EX Frame;
+        return QuicReliableResetFrameDecode(BufferLength, Buffer, Offset, &Frame);
+    }
+    case QUIC_FRAME_STREAM:
+    case QUIC_FRAME_STREAM_1:
+    case QUIC_FRAME_STREAM_2:
+    case QUIC_FRAME_STREAM_3:
+    case QUIC_FRAME_STREAM_4:
+    case QUIC_FRAME_STREAM_5:
+    case QUIC_FRAME_STREAM_6:
+    case QUIC_FRAME_STREAM_7: {
         QUIC_STREAM_EX Frame;
         return QuicStreamFrameDecode(FrameType, BufferLength, Buffer, Offset, &Frame);
+    }
+    default: {
+        CXPLAT_DBG_ASSERT(FALSE);
+        return FALSE;
     }
     }
 }

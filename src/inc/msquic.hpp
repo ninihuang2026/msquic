@@ -747,6 +747,7 @@ public:
     MsQuicSettings& SetStreamMultiReceiveEnabled(bool value) { StreamMultiReceiveEnabled = value; IsSet.StreamMultiReceiveEnabled = TRUE; return *this; }
     MsQuicSettings& SetServerMigrationEnabled(bool value) { ServerMigrationEnabled = value; IsSet.ServerMigrationEnabled = TRUE; return *this; }
     MsQuicSettings& SetIgnoreUnreachable(bool value) { IgnoreUnreachable = value; IsSet.IgnoreUnreachable = TRUE; return *this; }
+    MsQuicSettings& SetMultipathEnabled(bool value) { MultipathEnabled = value; IsSet.MultipathEnabled = TRUE; return *this; }
 #endif
 
     QUIC_STATUS
@@ -1385,6 +1386,17 @@ struct MsQuicConnection {
         ) noexcept {
         return MsQuic->ConnectionSendResumptionTicket(Handle, Flags, DataLength, ResumptionData);
     }
+
+#ifdef QUIC_API_ENABLE_PREVIEW_FEATURES
+    QUIC_STATUS
+    ExportKeyingMaterial(
+        _In_ const QUIC_KEYING_MATERIAL_CONFIG* Config,
+        _Out_writes_bytes_(Config->OutputLength)
+            uint8_t* Output
+        ) noexcept {
+        return MsQuic->ConnectionExportKeyingMaterial(Handle, Config, Output);
+    }
+#endif // QUIC_API_ENABLE_PREVIEW_FEATURES
 
     QUIC_STATUS
     SetParam(

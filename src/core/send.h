@@ -150,10 +150,21 @@ QuicPacketTypeToEncryptLevelV2(
 #define QUIC_CONN_SEND_FLAG_PUNCH_ME_NOW            0x00100000U
 #define QUIC_CONN_SEND_FLAG_PUNCH_YOU_NOW           0x00200000U
 #define QUIC_CONN_SEND_FLAG_REMOVE_ADDRESS          0x00400000U
-#define QUIC_CONN_SEND_FLAG_QX_TRANSPORT_PARAMETERS 0x00800000U
-#define QUIC_CONN_SEND_FLAG_QX_PING                 0x01000000U
-#define QUIC_CONN_SEND_FLAG_QX_PING_RESPONSE        0x02000000U
+#define QUIC_CONN_SEND_FLAG_PATH_ABANDON            0x00800000U
+#define QUIC_CONN_SEND_FLAG_PATH_BACKUP             0x01000000U
+#define QUIC_CONN_SEND_FLAG_PATH_AVAILABLE          0x02000000U
+#define QUIC_CONN_SEND_FLAG_MAX_PATH_ID             0x04000000U
+#define QUIC_CONN_SEND_FLAG_PATHS_BLOCKED           0x08000000U
+#define QUIC_CONN_SEND_FLAG_PATH_CIDS_BLOCKED       0x10000000U
 #define QUIC_CONN_SEND_FLAG_DPLPMTUD                0x80000000U
+//
+// QMux (QX) connection send flags. SendFlags is a uint64_t; these live above
+// bit 31 so they coexist with the multipath PATH_* flags without renumbering
+// any upstream flags.
+//
+#define QUIC_CONN_SEND_FLAG_QX_TRANSPORT_PARAMETERS 0x0000000100000000ULL
+#define QUIC_CONN_SEND_FLAG_QX_PING                 0x0000000200000000ULL
+#define QUIC_CONN_SEND_FLAG_QX_PING_RESPONSE        0x0000000400000000ULL
 
 //
 // Flags that aren't blocked by congestion control.
@@ -274,6 +285,8 @@ typedef struct QUIC_SEND {
     //
     BOOLEAN Uninitialized : 1;
 
+    BOOLEAN FlushForPacing : 1;
+
     //
     // The next packet number to use.
     //
@@ -333,7 +346,7 @@ typedef struct QUIC_SEND {
     //
     // Set of flags indicating what data is ready to be sent out.
     //
-    uint32_t SendFlags;
+    uint64_t SendFlags;
 
     //
     // List of streams with data or control frames to send.
@@ -350,6 +363,8 @@ typedef struct QUIC_SEND {
     //
     uint16_t InitialTokenLength;
 
+    QUIC_PATH* PacingPath;
+    
 } QUIC_SEND;
 
 //
@@ -489,7 +504,7 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
 BOOLEAN
 QuicSendSetSendFlag(
     _In_ QUIC_SEND* Send,
-    _In_ uint32_t SendFlag
+    _In_ uint64_t SendFlag
     );
 
 //
@@ -499,7 +514,7 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
 void
 QuicSendClearSendFlag(
     _In_ QUIC_SEND* Send,
-    _In_ uint32_t SendFlag
+    _In_ uint64_t SendFlag
     );
 
 //

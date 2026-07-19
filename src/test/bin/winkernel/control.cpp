@@ -471,6 +471,8 @@ ExecuteTestRequest(
     RegisterTestFunction(QuicTestValidateListener);
     RegisterTestFunction(QuicTestValidateConnection);
 #ifdef QUIC_API_ENABLE_PREVIEW_FEATURES
+    RegisterTestFunction(QuicTestConnectionExportKeyingMaterial);
+    RegisterTestFunction(QuicTestValidateConnectionExportKeyingMaterial);
     RegisterTestFunction(QuicTestValidateConnectionPoolCreate);
     RegisterTestFunction(QuicTestValidateExecutionContext);
     RegisterTestFunction(QuicTestValidatePartition);
@@ -593,6 +595,7 @@ ExecuteTestRequest(
     RegisterTestFunction(QuicTestAddressDiscovery);
     RegisterTestFunction(QuicTestServerProbePath);
     RegisterTestFunction(QuicTestServerMigration);
+    RegisterTestFunction(QuicTestMultipath);
 #endif // QUIC_API_ENABLE_PREVIEW_FEATURES
 #endif // QUIC_TEST_DATAPATH_HOOKS_ENABLED
     RegisterTestFunction(QuicTestChangeMaxStreamID);

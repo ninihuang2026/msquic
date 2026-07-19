@@ -95,11 +95,11 @@ tracepoint(CLOG_SEND_C, EcnValidationUnknown , arg1);\
 
 /*----------------------------------------------------------
 // Decoder Ring for ScheduleSendFlags
-// [conn][%p] Adding send flags 0x%x (prev: 0x%x, new: 0x%x)
+// [conn][%p] Adding send flags 0x%llx (prev: 0x%llx, new: 0x%llx)
 // QuicTraceLogConnVerbose(
             ScheduleSendFlags,
             Connection,
-            "Adding send flags 0x%x (prev: 0x%x, new: 0x%x)",
+            "Adding send flags 0x%llx (prev: 0x%llx, new: 0x%llx)",
             SendFlags,
             Send->SendFlags,
             Send->SendFlags | SendFlags);
@@ -119,11 +119,11 @@ tracepoint(CLOG_SEND_C, ScheduleSendFlags , arg1, arg3, arg4, arg5);\
 
 /*----------------------------------------------------------
 // Decoder Ring for RemoveSendFlagsMsg
-// [conn][%p] Removing flags %x
+// [conn][%p] Removing flags %llx
 // QuicTraceLogConnVerbose(
             RemoveSendFlagsMsg,
             QuicSendGetConnection(Send),
-            "Removing flags %x",
+            "Removing flags %llx",
             (SendFlags & Send->SendFlags));
 // arg1 = arg1 = QuicSendGetConnection(Send) = arg1
 // arg3 = arg3 = (SendFlags & Send->SendFlags) = arg3

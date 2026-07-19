@@ -74,6 +74,10 @@ void QuicTestValidateRegistration();
 void QuicTestValidateConfiguration();
 void QuicTestValidateListener();
 void QuicTestValidateConnection();
+#ifdef QUIC_API_ENABLE_PREVIEW_FEATURES
+void QuicTestValidateConnectionExportKeyingMaterial();
+void QuicTestConnectionExportKeyingMaterial();
+#endif
 void QuicTestValidateStream(const bool& Connect);
 void QuicTestCloseConnBeforeStreamFlush();
 void QuicTestGlobalParam();
@@ -664,6 +668,17 @@ QuicTestServerProbePath(
 void
 QuicTestServerMigration(
     const MigrationArgs& Params
+    );
+
+void
+QuicTestMultipath(
+    _In_ const FamilyArgs& Params
+    );
+
+void
+QuicTestNatPortRebind(
+    _In_ int Family,
+    _In_ uint16_t KeepAlivePaddingSize
     );
 
 void

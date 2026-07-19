@@ -2291,8 +2291,8 @@ MsQuicOpenVersion(
 #endif
 
     Api->RegistrationClose2 = MsQuicRegistrationClose2;
-
     Api->ConnectionPoolCreate = MsQuicConnectionPoolCreate;
+    Api->ConnectionExportKeyingMaterial = MsQuicConnectionExportKeyingMaterial;
 
     Api->ConnectionQmuxOpen = MsQuicConnectionQmuxOpen;
     Api->ConnectionQmuxOpenInPartition = MsQuicConnectionQmuxOpenInPartition;

@@ -156,6 +156,12 @@ typedef struct QUIC_TRANSPORT_PARAMETERS {
 
     QUIC_VAR_INT MaxRecordSize;
 
+    //
+    // The initial maximum number of paths allowed.
+    //
+    _Field_range_(0, QUIC_TP_MAX_PATH_ID_MAX)
+    QUIC_VAR_INT InitialMaxPathId;
+
 } QUIC_TRANSPORT_PARAMETERS;
 
 //
