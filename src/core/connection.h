@@ -1262,6 +1262,15 @@ QuicConnStart(
     );
 
 //
+// Completes a QMux client's connection start once the TCP connect has finished.
+//
+_IRQL_requires_max_(PASSIVE_LEVEL)
+void
+QuicConnQMuxCompleteStart(
+    _In_ QUIC_CONNECTION* Connection
+    );
+
+//
 // Exports keying material derived from the connection's TLS session
 // (RFC 5705 / RFC 8446 section 7.5).
 //

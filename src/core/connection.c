@@ -1955,18 +1955,31 @@ QuicConnStart(
         if (QUIC_FAILED(Status)) {
             goto Exit;
         }
+
+        //
+        // Save the server name before handing the rest of the start off; the
+        // TLS layer needs it for SNI.
+        //
+        Connection->RemoteServerName = ServerName;
+        ServerName = NULL;
+
+        //
+        // The TCP connect completion is dispatched by the datapath on one of
+        // the partition threads, which may well be the thread running this
+        // operation. Waiting for it here would deadlock that thread against
+        // itself, so hold on to the configuration and finish the start from
+        // QuicConnQMuxCompleteStart once QuicQMuxTcpConnect queues
+        // QUIC_OPER_TYPE_TCP_CONNECT. The idle timer, armed below with
+        // HandshakeIdleTimeoutMs while the connection is not yet connected,
+        // bounds how long the connect may take.
+        //
+        QuicConfigurationAddRef(Configuration, QUIC_CONF_REF_CONN_START_OP);
+        QMux->PendingStartConfiguration = Configuration;
+        QMux->PendingStartFlags = StartFlags;
         QuicConnResetIdleTimeout(Connection);
-        BOOLEAN ConnectCompleted = CxPlatEventWaitWithTimeout(QMux->ConnectEvent, (uint32_t)Connection->Settings.HandshakeIdleTimeoutMs);
-        if (!ConnectCompleted) {
-            Status = QUIC_STATUS_CONNECTION_TIMEOUT;
-            goto Exit;
-        }
-        if (!Connection->State.TcpConnected) {
-             Status = QUIC_STATUS_INTERNAL_ERROR;
-             goto Exit;
-        }
-        Connection->State.LocalAddressSet = TRUE;
-        CxPlatSocketGetLocalAddress(QMux->Socket, &QMux->Route.LocalAddress);
+
+        Status = QUIC_STATUS_SUCCESS;
+        goto Exit;
     }
 
     //
@@ -2017,6 +2030,63 @@ Exit:
     }
 
     return Status;
+}
+
+//
+// Finishes the client side of a QMux ConnectionStart once the TCP connect has
+// completed. Runs on the connection's worker, from QUIC_OPER_TYPE_TCP_CONNECT.
+//
+_IRQL_requires_max_(PASSIVE_LEVEL)
+void
+QuicConnQMuxCompleteStart(
+    _In_ QUIC_CONNECTION* Connection
+    )
+{
+    QUIC_QMUX* QMux = QuicConnGetQMux(Connection);
+    QUIC_CONFIGURATION* Configuration = QMux->PendingStartConfiguration;
+    QUIC_CONN_START_FLAGS StartFlags = QMux->PendingStartFlags;
+    QUIC_STATUS Status;
+
+    if (Configuration == NULL) {
+        //
+        // The start was already completed or abandoned.
+        //
+        return;
+    }
+    QMux->PendingStartConfiguration = NULL;
+
+    if (!Connection->State.TcpConnected) {
+        Status = QUIC_STATUS_INTERNAL_ERROR;
+        goto Exit;
+    }
+
+    Connection->State.LocalAddressSet = TRUE;
+    CxPlatSocketGetLocalAddress(QMux->Socket, &QMux->Route.LocalAddress);
+
+    //
+    // Start the handshake.
+    //
+    Status = QuicConnSetConfiguration(Connection, Configuration);
+
+Exit:
+
+    if (QUIC_FAILED(Status)) {
+        if (StartFlags & QUIC_CONN_START_FLAG_FAIL_SILENTLY) {
+            //
+            // See the matching comment in QuicConnStart.
+            //
+            Connection->ClientCallbackHandler = NULL;
+        }
+        QuicConnCloseLocally(
+            Connection,
+            StartFlags & QUIC_CONN_START_FLAG_FAIL_SILENTLY ?
+                QUIC_CLOSE_SILENT | QUIC_CLOSE_QUIC_STATUS :
+                QUIC_CLOSE_INTERNAL_SILENT | QUIC_CLOSE_QUIC_STATUS,
+            (uint64_t)Status,
+            NULL);
+    }
+
+    QuicConfigurationRelease(Configuration, QUIC_CONF_REF_CONN_START_OP);
 }
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
@@ -10413,6 +10483,13 @@ QuicConnDrainOperations(
                 break; // Ignore if already shutdown
             }
             QuicQMuxProcessTcpDisconnect(QuicConnGetQMux(Connection));
+            break;
+
+        case QUIC_OPER_TYPE_TCP_CONNECT:
+            if (Connection->State.ShutdownComplete) {
+                break; // Ignore if already shutdown
+            }
+            QuicConnQMuxCompleteStart(Connection);
             break;
 
         default:

@@ -52,7 +52,6 @@ QuicQMuxInitialize(
     QMux->Connection = Connection;
     QMux->TcpReceiveQueueTail = &QMux->TcpReceiveQueue;
     CxPlatDispatchLockInitialize(&QMux->TcpReceiveQueueLock);
-    CxPlatEventInitialize(&QMux->ConnectEvent, TRUE, FALSE);
 
     QMux->PermitEarlyData = FALSE;
     QMux->SentEarlyDataPackets = NULL;
@@ -108,8 +107,16 @@ QuicQMuxUninitialize(
         QMux->TlsState.EarlyDataBuffer = NULL;
     }
     
+    if (QMux->PendingStartConfiguration != NULL) {
+        //
+        // The connection was cleaned up before the TCP connect completed, so
+        // the start never got to consume the configuration.
+        //
+        QuicConfigurationRelease(QMux->PendingStartConfiguration, QUIC_CONF_REF_CONN_START_OP);
+        QMux->PendingStartConfiguration = NULL;
+    }
+
     CxPlatDispatchLockUninitialize(&QMux->TcpReceiveQueueLock);
-    CxPlatEventUninitialize(QMux->ConnectEvent);
     CxPlatPoolFree(QMux);
 }
 
@@ -1675,7 +1682,22 @@ QuicQMuxTcpConnect(
             Connection,
             "TCP connected");
         Connection->State.TcpConnected = TRUE;
-        CxPlatEventSet(QMux->ConnectEvent);
+        //
+        // The rest of the start has to run on the connection's worker, both
+        // because it touches connection state and because this callback may be
+        // running on the very thread that worker uses.
+        //
+        QUIC_OPERATION* ConnOper =
+            QuicConnAllocOperation(Connection, QUIC_OPER_TYPE_TCP_CONNECT);
+        if (ConnOper != NULL) {
+            QuicConnQueueOper(Connection, ConnOper);
+        } else {
+            QuicTraceEvent(
+                AllocFailure,
+                "Allocation of '%s' failed. (%llu bytes)",
+                "Connect TCP operation",
+                0);
+        }
     } else {
         QuicTraceLogConnInfo(
             TcpDisconnected,

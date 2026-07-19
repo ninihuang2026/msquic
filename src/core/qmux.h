@@ -25,9 +25,13 @@ typedef struct QUIC_QMUX {
     CXPLAT_ROUTE Route;
 
     //
-    // Event to signal when the TCP connection is established.
-    // 
-    CXPLAT_EVENT ConnectEvent;
+    // Client-only. The configuration a ConnectionStart is holding on to while
+    // it waits for the TCP connect to complete, along with the flags that its
+    // failure path needs. Holds a QUIC_CONF_REF_CONN_START_OP reference until
+    // the start completes or the connection is cleaned up.
+    //
+    QUIC_CONFIGURATION* PendingStartConfiguration;
+    QUIC_CONN_START_FLAGS PendingStartFlags;
 
     //
     // The TLS context.

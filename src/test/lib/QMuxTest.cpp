@@ -176,7 +176,8 @@ QuicTestQMuxConnect(
     TEST_QUIC_SUCCEEDED(Connection.GetInitStatus());
 
     //
-    // Note that for QMux this call blocks until the TCP connect completes.
+    // Like UDP, this only queues the start; for QMux the TCP connect and the
+    // TLS handshake both complete asynchronously.
     //
     TEST_QUIC_SUCCEEDED(
         Connection.Start(
