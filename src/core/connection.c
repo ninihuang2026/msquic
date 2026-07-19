@@ -3326,6 +3326,7 @@ QuicConnRecvRetry(
 
     if (!QuicVersionNegotiationExtIsVersionClientSupported(Connection, Packet->LH->Version)) {
         QuicPacketLogDrop(Connection, Packet, "Retry Version not supported by client");
+        return;
     }
 
     const QUIC_VERSION_INFO* VersionInfo = NULL;
@@ -9615,6 +9616,42 @@ QuicConnApplyNewSettings(
 }
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
+QUIC_STATUS
+QuicConnExportKeyingMaterial(
+    _In_ QUIC_CONNECTION* Connection,
+    _In_ const QUIC_KEYING_MATERIAL_CONFIG* Config,
+    _Out_writes_bytes_(Config->OutputLength)
+        uint8_t* Output
+    )
+{
+    //
+    // The keying material is derived from the connection's TLS secrets: the
+    // handshake must be complete and the TLS context must still be present.
+    //
+    if (!Connection->State.Connected ||
+        !Connection->Crypto.TlsState.HandshakeComplete ||
+        Connection->Crypto.TLS == NULL) {
+        QuicTraceLogConnWarning(
+            ExportKeyingMaterialInvalidState,
+            Connection,
+            "Cannot export keying material [Connected=%hhu, HandshakeComplete=%hhu, HasTls=%hhu]",
+            Connection->State.Connected,
+            Connection->Crypto.TlsState.HandshakeComplete,
+            (uint8_t)(Connection->Crypto.TLS != NULL));
+        return QUIC_STATUS_INVALID_STATE;
+    }
+
+    return
+        CxPlatTlsExportKeyingMaterial(
+            Connection->Crypto.TLS,
+            Config->Label,
+            Config->Context,
+            Config->ContextLength,
+            Output,
+            Config->OutputLength);
+}
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
 void
 QuicConnProcessApiOperation(
     _In_ QUIC_CONNECTION* Connection,
@@ -9769,6 +9806,14 @@ QuicConnProcessApiOperation(
 
     case QUIC_API_TYPE_DATAGRAM_SEND:
         QuicDatagramSendFlush(&Connection->Datagram);
+        break;
+
+    case QUIC_API_TYPE_CONN_EXPORT_KEYING_MATERIAL:
+        Status =
+            QuicConnExportKeyingMaterial(
+                Connection,
+                ApiCtx->CONN_EXPORT_KEYING_MATERIAL.Config,
+                ApiCtx->CONN_EXPORT_KEYING_MATERIAL.Output);
         break;
 
     default:
