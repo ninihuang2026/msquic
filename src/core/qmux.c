@@ -659,6 +659,7 @@ QuicQMuxRecvFrames(
                     return FALSE;
                 }
             }
+            break;
         }
 
         case QUIC_FRAME_PADDING: {
