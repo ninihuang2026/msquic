@@ -1089,7 +1089,7 @@ impl Connection {
                     .map(|data| data.len() as u16)
                     .unwrap_or(0),
                 resumption_app_data
-                    .map(|data| data.as_ptr() as *const u8)
+                    .map(|data| data.as_ptr())
                     .unwrap_or(std::ptr::null()),
             )
         };
