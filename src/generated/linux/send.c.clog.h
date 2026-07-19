@@ -157,11 +157,11 @@ tracepoint(CLOG_SEND_C, AmplificationProtectionBlocked , arg1);\
 
 /*----------------------------------------------------------
 // Decoder Ring for SendFlushComplete
-// [conn][%p] Flush complete flags=0x%x
+// [conn][%p] Flush complete flags=0x%llx
 // QuicTraceLogConnVerbose(
         SendFlushComplete,
         Connection,
-        "Flush complete flags=0x%x",
+        "Flush complete flags=0x%llx",
         Send->SendFlags);
 // arg1 = arg1 = Connection = arg1
 // arg3 = arg3 = Send->SendFlags = arg3

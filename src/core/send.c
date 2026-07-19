@@ -2057,7 +2057,7 @@ QuicSendFlush(
     QuicTraceLogConnVerbose(
         SendFlushComplete,
         Connection,
-        "Flush complete flags=0x%x",
+        "Flush complete flags=0x%llx",
         Send->SendFlags);
 
     if (Result == QUIC_SEND_INCOMPLETE) {

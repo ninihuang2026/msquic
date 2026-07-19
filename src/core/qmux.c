@@ -383,6 +383,13 @@ QuicQMuxQueueRecvData(
     )
 {
     QUIC_CONNECTION* Connection = QMux->Connection;
+    if (RecvDataChain == NULL) {
+        //
+        // Nothing to queue.
+        //
+        return;
+    }
+
     CXPLAT_RECV_DATA** RecvDataChainTail = (CXPLAT_RECV_DATA**)&RecvDataChain->Next;
     while (*RecvDataChainTail != NULL) {
         RecvDataChainTail = (CXPLAT_RECV_DATA**)&((*RecvDataChainTail)->Next);
@@ -641,7 +648,8 @@ QuicQMuxRecvFrames(
                         "Unexpected QX PING response frame");
                     QuicConnTransportError(Connection, QUIC_ERROR_PROTOCOL_VIOLATION);
                     return FALSE;
-                } else if (QMux->NextPingSequenceNumber -1 < Frame.SequenceNumber) {
+                }
+                if (QMux->NextPingSequenceNumber -1 < Frame.SequenceNumber) {
                     QuicTraceEvent(
                         ConnError,
                         "[conn][%p] ERROR, %s.",
@@ -1389,7 +1397,8 @@ QuicQMuxRecvData(
                     RecvDataOffset += RecvDataConsumedLength;
                     RecvDataConsumedLength = RecvDataLength - RecvDataOffset;
                     continue;
-                } else if (QMux->ResultFlags & CXPLAT_TLS_RESULT_BUFFER_TOO_SMALL) {
+                }
+                if (QMux->ResultFlags & CXPLAT_TLS_RESULT_BUFFER_TOO_SMALL) {
                     // The receive buffer is too small to hold the decrypted data.
                     uint32_t RequiredLength = QMux->RecvBufferLength + RecvBufferAppendedLength;
                     uint32_t NewRecvBufferAllocLength = QMux->RecvBufferAllocLength;
@@ -1438,8 +1447,17 @@ QuicQMuxRecvData(
                     RecvDataOffset += RecvDataConsumedLength;
                     RecvDataConsumedLength = RecvDataLength - RecvDataOffset;
                     continue;
-                } else if (QMux->ResultFlags & CXPLAT_TLS_RESULT_ERROR) {
-                    Status = QUIC_STATUS_TLS_ERROR;
+                }
+                if (QMux->ResultFlags & CXPLAT_TLS_RESULT_ERROR) {
+                    //
+                    // QUIC_STATUS_TLS_ERROR isn't defined in kernel mode, so
+                    // report the alert (when we have one) the same way the
+                    // crypto layer does.
+                    //
+                    Status =
+                        QMux->TlsState.AlertCode != 0 ?
+                            QUIC_STATUS_TLS_ALERT(QMux->TlsState.AlertCode) :
+                            QUIC_STATUS_INTERNAL_ERROR;
                     QuicTraceEvent(
                         ConnErrorStatus,
                         "[conn][%p] ERROR, %u, %s.",

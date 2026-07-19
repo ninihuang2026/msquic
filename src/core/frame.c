@@ -2058,7 +2058,7 @@ QxPingFrameEncode(
 
     Buffer = Buffer + *Offset;
     Buffer = QuicVarIntEncode(FrameType, Buffer);
-    Buffer = QuicVarIntEncode(Frame->SequenceNumber, Buffer);
+    QuicVarIntEncode(Frame->SequenceNumber, Buffer);
     *Offset += RequiredLength;
 
     return TRUE;

@@ -4519,6 +4519,15 @@
               template="tid_PATHID_BBR"
               value="11280"
               />
+          <event
+              keywords="ut:RPS"
+              level="win:Verbose"
+              message="$(string.Etw.PacketEncryptQMux)"
+              opcode="Global"
+              symbol="QuicPacketEncryptQMux"
+              template="tid_ID"
+              value="11281"
+              />
         </events>
       </provider>
     </events>
@@ -5166,6 +5175,10 @@
         <string
             id="Etw.PacketEncrypt"
             value="[pack][%1][%2] Encrypting"
+            />
+        <string
+            id="Etw.PacketEncryptQMux"
+            value="[pack][%1] Encrypting"
             />
         <string
             id="Etw.PacketFinalize"

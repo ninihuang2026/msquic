@@ -145,11 +145,11 @@ TRACEPOINT_EVENT(CLOG_SEND_C, AmplificationProtectionBlocked,
 
 /*----------------------------------------------------------
 // Decoder Ring for SendFlushComplete
-// [conn][%p] Flush complete flags=0x%x
+// [conn][%p] Flush complete flags=0x%llx
 // QuicTraceLogConnVerbose(
         SendFlushComplete,
         Connection,
-        "Flush complete flags=0x%x",
+        "Flush complete flags=0x%llx",
         Send->SendFlags);
 // arg1 = arg1 = Connection = arg1
 // arg3 = arg3 = Send->SendFlags = arg3
@@ -157,10 +157,10 @@ TRACEPOINT_EVENT(CLOG_SEND_C, AmplificationProtectionBlocked,
 TRACEPOINT_EVENT(CLOG_SEND_C, SendFlushComplete,
     TP_ARGS(
         const void *, arg1,
-        unsigned int, arg3), 
+        unsigned long long, arg3), 
     TP_FIELDS(
         ctf_integer_hex(uint64_t, arg1, (uint64_t)arg1)
-        ctf_integer(unsigned int, arg3, arg3)
+        ctf_integer(uint64_t, arg3, arg3)
     )
 )
 

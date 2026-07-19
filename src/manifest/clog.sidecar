@@ -6879,7 +6879,7 @@
     },
     "GetPacketTypeFailure": {
       "ModuleProperites": {},
-      "TraceString": "[conn][%p] Failed to get packet type for control frames, 0x%x",
+      "TraceString": "[conn][%p] Failed to get packet type for control frames, 0x%llx",
       "UniqueId": "GetPacketTypeFailure",
       "splitArgs": [
         {
@@ -6887,7 +6887,7 @@
           "MacroVariableName": "arg1"
         },
         {
-          "DefinationEncoding": "x",
+          "DefinationEncoding": "llx",
           "MacroVariableName": "arg3"
         }
       ],
@@ -11955,7 +11955,7 @@
     },
     "SendFlushComplete": {
       "ModuleProperites": {},
-      "TraceString": "[conn][%p] Flush complete flags=0x%x",
+      "TraceString": "[conn][%p] Flush complete flags=0x%llx",
       "UniqueId": "SendFlushComplete",
       "splitArgs": [
         {
@@ -11963,7 +11963,7 @@
           "MacroVariableName": "arg1"
         },
         {
-          "DefinationEncoding": "x",
+          "DefinationEncoding": "llx",
           "MacroVariableName": "arg3"
         }
       ],
@@ -17257,9 +17257,9 @@
         "EncodingString": "[%c][%cX][%llu]   unknown frame (%llu)"
       },
       {
-        "UniquenessHash": "03e79f57-89b7-b2d2-b13f-cb2f995b47cd",
+        "UniquenessHash": "7135e141-5146-448d-e4c0-f3ecca7c8f24",
         "TraceID": "GetPacketTypeFailure",
-        "EncodingString": "[conn][%p] Failed to get packet type for control frames, 0x%x"
+        "EncodingString": "[conn][%p] Failed to get packet type for control frames, 0x%llx"
       },
       {
         "UniquenessHash": "72895611-1b21-d389-c78b-ab44b14b458f",
@@ -18832,9 +18832,9 @@
         "EncodingString": "[strm][%p]   unACKed: [%llu, %llu]"
       },
       {
-        "UniquenessHash": "6068f77b-96f9-706f-e3c0-02193c9c1c2a",
+        "UniquenessHash": "21f6a5b2-170e-bd44-8778-a070c5118454",
         "TraceID": "SendFlushComplete",
-        "EncodingString": "[conn][%p] Flush complete flags=0x%x"
+        "EncodingString": "[conn][%p] Flush complete flags=0x%llx"
       },
       {
         "UniquenessHash": "17bf6c28-0f23-8f48-f293-61afc78f4b87",
