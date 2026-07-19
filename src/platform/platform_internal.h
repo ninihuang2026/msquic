@@ -204,13 +204,16 @@ typedef struct CXPLAT_SOCKET {
         UCHAR IrpBuffer[sizeof(IRP) + sizeof(IO_STACK_LOCATION)];
     };
 
-    uint8_t ReserveAuxTcpSock : 1; // always false?
+    uint8_t ReserveAuxTcpSockForQtip : 1; // always false in kernel mode.
 
     //
     // Flag indicates the socket has a default remote destination.
     //
     uint8_t HasFixedRemoteAddress : 1;
+
     uint8_t RawSocketAvailable : 1;
+
+    uint8_t SkipCreatingOsSockets : 1;
 
     CXPLAT_RUNDOWN_REF Rundown[0]; // Per-proc
 
@@ -283,7 +286,7 @@ typedef struct CXPLAT_DATAPATH {
     //
     uint32_t ProcCount;
 
-    uint8_t ReserveAuxTcpSock : 1; // Not supported. always false
+    uint8_t ReserveAuxTcpSockForQtip : 1; // Not supported. always false.
 
     //
     // Per-processor completion contexts.
@@ -523,7 +526,7 @@ typedef struct CXPLAT_DATAPATH {
     uint8_t Uninitialized : 1;
     uint8_t Freed : 1;
 
-    uint8_t ReserveAuxTcpSock : 1;
+    uint8_t ReserveAuxTcpSockForQtip : 1;
 
     //
     // Per-processor completion contexts.
@@ -591,9 +594,11 @@ typedef struct CXPLAT_SOCKET {
     // TCP socket, or per-proc UDP sockets. For servers, we always create
     // per-proc UDP sockets, and optionally create an auxiliary TCP socket.
     //
-    uint8_t ReserveAuxTcpSock : 1;
+    uint8_t ReserveAuxTcpSockForQtip : 1;
 
     uint8_t RawSocketAvailable : 1;
+
+    uint8_t SkipCreatingOsSockets : 1;
 
     //
     // Per-processor socket contexts.
@@ -896,9 +901,11 @@ typedef struct CXPLAT_SOCKET {
     uint8_t Freed : 1;
 #endif
 
-    uint8_t ReserveAuxTcpSock : 1;                  // Quic over TCP
+    uint8_t ReserveAuxTcpSockForQtip : 1;                  // Quic over TCP
 
     uint8_t RawSocketAvailable : 1;
+
+    uint8_t SkipCreatingOsSockets : 1;
 
     //
     // Set of socket contexts one per proc.
@@ -1030,7 +1037,7 @@ typedef struct CXPLAT_DATAPATH {
     uint8_t Freed : 1;
 #endif
 
-    uint8_t ReserveAuxTcpSock : 1;
+    uint8_t ReserveAuxTcpSockForQtip : 1;
 
     //
     // The per proc datapath contexts.
@@ -1196,6 +1203,7 @@ RawDataPathInitialize(
     _In_ uint32_t ClientRecvContextLength,
     _In_opt_ const CXPLAT_DATAPATH* ParentDataPath,
     _In_ CXPLAT_WORKER_POOL* WorkerPool,
+    _In_ const CXPLAT_DATAPATH_INIT_CONFIG* InitConfig,
     _Outptr_result_maybenull_ CXPLAT_DATAPATH_RAW** DataPath
     );
 
@@ -1212,6 +1220,28 @@ RawDataPathUpdatePollingIdleTimeout(
     _In_ uint32_t PollingIdleTimeoutUs
     );
 
+//
+// Inserts each interface's RX XSK sockets into the matching XSKMAP from the
+// provided map configs. Uses an O(Interfaces * MapConfigCount) search to match
+// each config to its interface by IfIndex.
+//
+_IRQL_requires_max_(PASSIVE_LEVEL)
+QUIC_STATUS
+CxPlatDpRawApplyMapConfigs(
+    _In_ CXPLAT_DATAPATH_RAW* RawDataPath,
+    _In_reads_(MapConfigCount) const CXPLAT_XDP_MAP_CONFIG* MapConfigs,
+    _In_ uint32_t MapConfigCount
+    );
+
+//
+// Best-effort removal of XSK sockets from maps during cleanup.
+//
+_IRQL_requires_max_(PASSIVE_LEVEL)
+void
+CxPlatDpRawCleanupMapConfigs(
+    _In_ CXPLAT_DATAPATH_RAW* RawDataPath
+    );
+
 _IRQL_requires_max_(DISPATCH_LEVEL)
 CXPLAT_DATAPATH_FEATURES
 RawDataPathGetSupportedFeatures(
@@ -1222,6 +1252,24 @@ _IRQL_requires_max_(DISPATCH_LEVEL)
 BOOLEAN
 RawDataPathIsPaddingPreferred(
     _In_ CXPLAT_DATAPATH* Datapath
+    );
+
+BOOLEAN
+CxPlatDpRawIsRawDatapathOnly(
+    _In_opt_ const CXPLAT_DATAPATH_RAW* RawDataPath
+    );
+
+void
+CxPlatDpRawEnableRawDatapathOnly(
+    _In_ CXPLAT_DATAPATH_RAW* RawDataPath
+    );
+
+//
+// Returns the total number of XDP rules plumbed across all interfaces.
+//
+uint32_t
+CxPlatDpRawGetTotalRuleCount(
+    _In_ const CXPLAT_DATAPATH_RAW* RawDataPath
     );
 
 _IRQL_requires_max_(PASSIVE_LEVEL)

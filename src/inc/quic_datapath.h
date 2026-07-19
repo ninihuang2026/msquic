@@ -468,6 +468,10 @@ void
 
 typedef CXPLAT_DATAPATH_SEND_COMPLETE *CXPLAT_DATAPATH_SEND_COMPLETE_HANDLER;
 
+typedef struct CXPLAT_XDP_MAP_CONFIG {
+    uint32_t InterfaceIndex;
+    QUIC_XDP_MAP_HANDLE MapHandle;
+} CXPLAT_XDP_MAP_CONFIG;
 
 typedef struct CXPLAT_DATAPATH_INIT_CONFIG {
     //
@@ -476,6 +480,10 @@ typedef struct CXPLAT_DATAPATH_INIT_CONFIG {
     // the Windows fast path causing a large performance regression.
     //
     BOOLEAN EnableDscpOnRecv;
+
+    _Field_size_(XdpMapConfigCount)
+    const CXPLAT_XDP_MAP_CONFIG* XdpMapConfigs;
+    uint32_t XdpMapConfigCount;
 } CXPLAT_DATAPATH_INIT_CONFIG;
 
 //
@@ -498,6 +506,15 @@ CxPlatDataPathInitialize(
 _IRQL_requires_max_(PASSIVE_LEVEL)
 void
 CxPlatDataPathUninitialize(
+    _In_ CXPLAT_DATAPATH* Datapath
+    );
+
+//
+// Returns the total number of XDP rules plumbed across all interfaces.
+//
+_IRQL_requires_max_(PASSIVE_LEVEL)
+uint32_t
+CxPlatDataPathGetXdpRuleCount(
     _In_ CXPLAT_DATAPATH* Datapath
     );
 
@@ -625,6 +642,24 @@ typedef struct CXPLAT_UDP_CONFIG {
 } CXPLAT_UDP_CONFIG;
 
 //
+// Converts a CIBIR ID byte array to a uint64 for trace logging.
+//
+QUIC_INLINE
+uint64_t
+QuicCibirIdToUint64(
+    _In_reads_(Length) const uint8_t* Id,
+    _In_ uint8_t Length
+    )
+{
+    CXPLAT_DBG_ASSERT(Length <= 8);
+    uint64_t Value = 0;
+    for (uint8_t i = 0; i < Length; ++i) {
+        Value = (Value << 8) | Id[i];
+    }
+    return Value;
+}
+
+//
 // Creates a UDP socket for the given (optional) local address and/or (optional)
 // remote address. This function immediately registers for receive upcalls from
 // the layer below.
@@ -686,6 +721,15 @@ CxPlatSocketUpdateQeo(
     _In_reads_(OffloadCount)
         const CXPLAT_QEO_CONNECTION* Offloads,
     _In_ uint32_t OffloadCount
+    );
+
+//
+// Queries the QTIP settings of the binding.
+//
+_IRQL_requires_max_(DISPATCH_LEVEL)
+BOOLEAN
+CxPlatSocketGetQtipEnabled(
+    _In_ CXPLAT_SOCKET* Socket
     );
 
 //

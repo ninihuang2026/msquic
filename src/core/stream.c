@@ -470,13 +470,16 @@ QuicStreamIndicateEvent(
         // or stream is being closed because the API MUST block until all work
         // is completed, so we have to execute the event callbacks inline. There
         // is also one additional exception for start complete when StreamStart
-        // is called synchronously on an MsQuic thread.
+        // is called synchronously on an MsQuic thread. Custom executions
+        // always have InlineApiExecution set, which makes this reentrancy
+        // check unreliable, so it is skipped for custom executions.
         //
         CXPLAT_DBG_ASSERT(
             !Stream->Connection->State.InlineApiExecution ||
             Stream->Connection->State.HandleClosed ||
             Stream->Flags.HandleClosed ||
-            Event->Type == QUIC_STREAM_EVENT_START_COMPLETE);
+            Event->Type == QUIC_STREAM_EVENT_START_COMPLETE ||
+            MsQuicLib.CustomExecutions);
         Status =
             Stream->ClientCallbackHandler(
                 (HQUIC)Stream,
@@ -978,6 +981,15 @@ QuicStreamSwitchToAppOwnedBuffers(
     )
 {
     //
+    // Preserve the initial receive window size: it should not have changed
+    // since the stream's creation.
+    //
+    const uint32_t InitialControlFlow = Stream->RecvBuffer.VirtualBufferLength;
+    CXPLAT_DBG_ASSERT(
+        InitialControlFlow == Stream->Connection->Settings.StreamRecvWindowBidiRemoteDefault ||
+        InitialControlFlow == Stream->Connection->Settings.StreamRecvWindowUnidiDefault);
+
+    //
     // Reset the current receive buffer
     //
     QuicRecvBufferUninitialize(&Stream->RecvBuffer);
@@ -988,7 +1000,7 @@ QuicStreamSwitchToAppOwnedBuffers(
     (void)QuicRecvBufferInitialize(
         &Stream->RecvBuffer,
         0,
-        0,
+        InitialControlFlow,
         QUIC_RECV_BUF_MODE_APP_OWNED,
         NULL);
     Stream->Flags.UseAppOwnedRecvBuffers = TRUE;

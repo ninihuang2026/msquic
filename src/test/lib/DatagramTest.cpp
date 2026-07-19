@@ -24,11 +24,10 @@ ListenerAcceptConnection(
     )
 {
     ServerAcceptContext* AcceptContext = (ServerAcceptContext*)Listener->Context;
-    *AcceptContext->NewConnection = new(std::nothrow) TestConnection(ConnectionHandle);
+    AcceptContext->NewConnection->reset(new(std::nothrow) TestConnection(ConnectionHandle));
     if (*AcceptContext->NewConnection == nullptr || !(*AcceptContext->NewConnection)->IsValid()) {
         TEST_FAILURE("Failed to accept new TestConnection.");
-        delete *AcceptContext->NewConnection;
-        *AcceptContext->NewConnection = nullptr;
+        AcceptContext->NewConnection->reset(nullptr);
         return false;
     }
     (*AcceptContext->NewConnection)->SetHasRandomLoss(Listener->GetHasRandomLoss());
@@ -38,10 +37,11 @@ ListenerAcceptConnection(
 
 void
 QuicTestDatagramNegotiation(
-    _In_ int Family,
-    _In_ bool DatagramReceiveEnabled
+    const DatagramNegotiationArgs& Params
     )
 {
+    const int Family = Params.Family;
+    const bool DatagramReceiveEnabled = Params.DatagramReceiveEnabled;
     MsQuicRegistration Registration;
     TEST_TRUE(Registration.IsValid());
 
@@ -62,6 +62,7 @@ QuicTestDatagramNegotiation(
     QUIC_BUFFER DatagramBuffer = { sizeof(RawBuffer), RawBuffer };
 
     {
+        UniquePtr<TestConnection> Server;
         TestListener Listener(Registration, ListenerAcceptConnection, ServerConfiguration);
         TEST_TRUE(Listener.IsValid());
 
@@ -71,8 +72,7 @@ QuicTestDatagramNegotiation(
         TEST_QUIC_SUCCEEDED(Listener.GetLocalAddr(ServerLocalAddr));
 
         {
-            UniquePtr<TestConnection> Server;
-            ServerAcceptContext ServerAcceptCtx((TestConnection**)&Server);
+            ServerAcceptContext ServerAcceptCtx(&Server);
             Listener.Context = &ServerAcceptCtx;
 
             {
@@ -138,9 +138,10 @@ QuicTestDatagramNegotiation(
 
 void
 QuicTestDatagramSend(
-    _In_ int Family
+    const FamilyArgs& Params
     )
 {
+    const int Family = Params.Family;
     MsQuicRegistration Registration;
     TEST_TRUE(Registration.IsValid());
 
@@ -162,6 +163,7 @@ QuicTestDatagramSend(
     SelectiveLossHelper LossHelper;
 
     {
+        UniquePtr<TestConnection> Server;
         TestListener Listener(Registration, ListenerAcceptConnection, ServerConfiguration);
         TEST_TRUE(Listener.IsValid());
 
@@ -171,8 +173,7 @@ QuicTestDatagramSend(
         TEST_QUIC_SUCCEEDED(Listener.GetLocalAddr(ServerLocalAddr));
 
         {
-            UniquePtr<TestConnection> Server;
-            ServerAcceptContext ServerAcceptCtx((TestConnection**)&Server);
+            ServerAcceptContext ServerAcceptCtx(&Server);
             Listener.Context = &ServerAcceptCtx;
 
             {
@@ -271,9 +272,10 @@ QuicTestDatagramSend(
 
 void
 QuicTestDatagramDrop(
-    _In_ int Family
+    const FamilyArgs& Params
     )
 {
+    const int Family = Params.Family;
     MsQuicRegistration Registration;
     TEST_TRUE(Registration.IsValid());
 
@@ -295,6 +297,7 @@ QuicTestDatagramDrop(
     SelectiveLossHelper LossHelper;
 
     {
+        UniquePtr<TestConnection> Server;
         TestListener Listener(Registration, ListenerAcceptConnection, ServerConfiguration);
         TEST_TRUE(Listener.IsValid());
 
@@ -304,8 +307,7 @@ QuicTestDatagramDrop(
         TEST_QUIC_SUCCEEDED(Listener.GetLocalAddr(ServerLocalAddr));
 
         {
-            UniquePtr<TestConnection> Server;
-            ServerAcceptContext ServerAcceptCtx((TestConnection**)&Server);
+            ServerAcceptContext ServerAcceptCtx(&Server);
             Listener.Context = &ServerAcceptCtx;
 
             {

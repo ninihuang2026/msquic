@@ -39,9 +39,9 @@ jobs:
       matrix:
         vec: [
           { plat: "linux", os: "ubuntu-22.04", arch: "x64", tls: "quictls" },
-          { plat: "linux", os: "ubuntu-24.04", arch: "x64", tls: "quictls", xdp: "-UseXdp" },
+          { plat: "linux", os: "ubuntu-24.04", arch: "x64", tls: "quictls" },
           { plat: "linux", os: "ubuntu-22.04", arch: "x64", tls: "openssl" },
-          { plat: "linux", os: "ubuntu-24.04", arch: "x64", tls: "openssl", xdp: "-UseXdp" },
+          { plat: "linux", os: "ubuntu-24.04", arch: "x64", tls: "openssl" },
         ]
     uses: ./.github/workflows/build-reuse-unix.yml
     with:
@@ -50,7 +50,6 @@ jobs:
       os: ${{ matrix.vec.os }}
       arch: ${{ matrix.vec.arch }}
       tls: ${{ matrix.vec.tls }}
-      xdp: ${{ matrix.vec.xdp }}
       repo: ${{ github.repository }}
 
   build-windows:
@@ -81,27 +80,27 @@ jobs:
         vec: [
           { plat: "windows", os: "windows-2022", arch: "x64", tls: "quictls" },
           { plat: "linux", os: "ubuntu-22.04", arch: "x64", tls: "quictls" },
-          { plat: "linux", os: "ubuntu-24.04", arch: "x64", tls: "quictls", xdp: "-UseXdp" },
+          { plat: "linux", os: "ubuntu-24.04", arch: "x64", tls: "quictls" },
           { plat: "linux", os: "ubuntu-22.04", arch: "x64", tls: "openssl" },
-          { plat: "linux", os: "ubuntu-24.04", arch: "x64", tls: "openssl", xdp: "-UseXdp" },
+          { plat: "linux", os: "ubuntu-24.04", arch: "x64", tls: "openssl" },
           { plat: "macos", os: "macos-15", arch: "universal", tls: "quictls" },
           { plat: "macos", os: "macos-15", arch: "universal", tls: "openssl" },
         ]
     runs-on: ${{ matrix.vec.os }}
     steps:
     - name: Checkout repository
-      uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
     - name: Prepare Machine
       shell: pwsh
-      run: scripts/prepare-machine.ps1 -ForTest ${{ matrix.vec.xdp }}
+      run: scripts/prepare-machine.ps1 -ForTest
     - name: Download Build Artifacts
-      uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
       with:
-        name: Debug-${{ matrix.vec.plat }}-${{ matrix.vec.os }}-${{ matrix.vec.arch }}-${{ matrix.vec.tls }}${{ matrix.vec.xdp }}
+        name: Debug-${{ matrix.vec.plat }}-${{ matrix.vec.os }}-${{ matrix.vec.arch }}-${{ matrix.vec.tls }}
         path: artifacts
-    - uses: actions/setup-dotnet@2016bd2012dba4e32de620c46fe006a3ac9f0602
+    - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
       with:
-        dotnet-version: 6.0.x
+        dotnet-version: 10.0.x
     - name: Run Lang Interop
       shell: pwsh
       run: scripts/DotNetTest.ps1 -Config Debug -Arch ${{ matrix.vec.arch }} -Tls ${{ matrix.vec.tls }} -DomainName "google.com"

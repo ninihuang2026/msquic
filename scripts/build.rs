@@ -27,17 +27,22 @@ fn cmake_build() {
     }
 
     let target = env::var("TARGET").unwrap().replace("\\", "/");
-    let out_dir = env::var("OUT_DIR").unwrap().replace("\\", "/");
+    let out_dir = env::var("OUT_DIR").unwrap();
     // The output directory for the native MsQuic library.
-    let libdir = "/lib";
-    let full_out_dir = [out_dir, libdir.to_string()].join("");
-    let quic_output_dir = Path::new(&full_out_dir);
+    let quic_output_dir = if cfg!(windows) {
+        Path::new(&out_dir).join("lib")
+    } else {
+        Path::new(&out_dir).join("artifacts")
+    };
 
     // Builds the native MsQuic and installs it into $OUT_DIR.
     let mut config = Config::new(".");
     config
         .define("QUIC_ENABLE_LOGGING", logging_enabled)
-        .define("QUIC_OUTPUT_DIR", quic_output_dir.to_str().unwrap());
+        .define(
+            "QUIC_OUTPUT_DIR",
+            quic_output_dir.to_str().unwrap().replace('\\', "/"),
+        );
 
     // Disable parallel builds on Windows, as they seems to break manifest builds.
     if cfg!(windows) {
@@ -50,6 +55,28 @@ fn cmake_build() {
         config.define("QUIC_TLS_LIB", "quictls");
     } else if cfg!(feature = "openssl") {
         config.define("QUIC_TLS_LIB", "openssl");
+    } else if cfg!(feature = "openssl_external") {
+        config
+            .define("QUIC_TLS_LIB", "openssl")
+            .define("QUIC_USE_EXTERNAL_OPENSSL", "on");
+        if let Ok(openssl_dir) = std::env::var("OPENSSL_ROOT_DIR") {
+            config.define("QUIC_OPENSSL_ROOT_DIR", openssl_dir);
+        } else {
+            match (
+                std::env::var("OPENSSL_INCLUDE_DIR"),
+                std::env::var("OPENSSL_LIB_DIR"),
+            ) {
+                (Ok(include_dir), Ok(lib_dir)) => {
+                    config
+                        .define("QUIC_OPENSSL_INCLUDE_DIR", include_dir)
+                        .define("QUIC_OPENSSL_LIB_DIR", lib_dir);
+                }
+                (Ok(_), Err(_)) | (Err(_), Ok(_)) => {
+                    panic!("both OPENSSL_INCLUDE_DIR and OPENSSL_LIB_DIR must be set")
+                }
+                (Err(_), Err(_)) => {}
+            }
+        }
     } else if cfg!(windows) {
         config.define("QUIC_TLS_LIB", "schannel");
     } else {
@@ -90,6 +117,20 @@ fn cmake_build() {
         } else if cfg!(target_os = "macos") {
             println!("cargo:rustc-link-lib=framework=CoreFoundation");
             println!("cargo:rustc-link-lib=framework=Security");
+        } else if cfg!(windows) {
+            // Windows system libraries that the static msquic.lib depends on.
+            // These are excluded from the monolithic archive (via the inc/base_link
+            // EXCLUDE_LIST in CMake) and must be linked explicitly by the consumer.
+            for lib in [
+                "ws2_32", "ntdll", "bcrypt", "ncrypt", "crypt32", "iphlpapi", "advapi32",
+                "schannel",
+            ] {
+                println!("cargo:rustc-link-lib={lib}");
+            }
+            if cfg!(feature = "openssl") || cfg!(feature = "quictls") {
+                // OpenSSL references user32 symbols (MessageBoxW, etc.)
+                println!("cargo:rustc-link-lib=user32");
+            }
         }
     }
 }

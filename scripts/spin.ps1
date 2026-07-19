@@ -95,7 +95,7 @@ param (
     [switch]$AZP = $false,
 
     [Parameter(Mandatory = $false)]
-    [switch]$UseXdp,
+    [string]$UseXdp = "",
 
     [Parameter(Mandatory = $false)]
     [switch]$UseProcDump = $false
@@ -193,10 +193,4 @@ if (![string]::IsNullOrWhiteSpace($ExtraArtifactDir)) {
     $Arguments += " -ExtraArtifactDir $ExtraArtifactDir"
 }
 
-# Run the script.
-if ($IsLinux -and $UseXdp) {
-    $NOFILE = Invoke-Expression "bash -c 'ulimit -n'"
-    Invoke-Expression ('/usr/bin/sudo bash -c "ulimit -n $NOFILE && pwsh $RunExecutable $Arguments"')
-} else {
     Invoke-Expression ($RunExecutable + " " + $Arguments)
-}

@@ -543,6 +543,16 @@ CxPlatDataPathUninitialize(
 }
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
+uint32_t
+CxPlatDataPathGetXdpRuleCount(
+    _In_ CXPLAT_DATAPATH* Datapath
+    )
+{
+    UNREFERENCED_PARAMETER(Datapath);
+    return 0;
+}
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
 void
 CxPlatDataPathUpdatePollingIdleTimeout(
     _In_ CXPLAT_DATAPATH* Datapath,
@@ -2090,6 +2100,17 @@ CxPlatSocketSend(
         &Route->RemoteAddress,
         SendData,
         FALSE);
+}
+
+_IRQL_requires_max_(DISPATCH_LEVEL)
+BOOLEAN
+CxPlatSocketGetQtipEnabled(
+    _In_ CXPLAT_SOCKET* Socket
+    )
+{
+    UNREFERENCED_PARAMETER(Socket);
+    CXPLAT_DBG_ASSERT(Socket != NULL);
+    return FALSE;
 }
 
 uint16_t

@@ -24,6 +24,7 @@ RawDataPathInitialize(
     _In_ uint32_t ClientRecvContextLength,
     _In_opt_ const CXPLAT_DATAPATH* ParentDataPath,
     _In_ CXPLAT_WORKER_POOL* WorkerPool,
+    _In_ const CXPLAT_DATAPATH_INIT_CONFIG* InitConfig,
     _Outptr_result_maybenull_ CXPLAT_DATAPATH_RAW** NewDataPath
     )
 {
@@ -31,11 +32,12 @@ RawDataPathInitialize(
     const size_t DatapathSize = CxPlatDpRawGetDatapathSize(WorkerPool);
     BOOLEAN DpRawInitialized = FALSE;
     BOOLEAN SockPoolInitialized = FALSE;
+    BOOLEAN RouteWorkerInitialized = FALSE;
 
     *NewDataPath = NULL;
 
-    CXPLAT_DATAPATH_RAW* DataPath = CXPLAT_ALLOC_PAGED(DatapathSize, QUIC_POOL_DATAPATH);
-    if (DataPath == NULL) {
+    CXPLAT_DATAPATH_RAW* RawDataPath = CXPLAT_ALLOC_PAGED(DatapathSize, QUIC_POOL_DATAPATH);
+    if (RawDataPath == NULL) {
         QuicTraceEvent(
             AllocFailure,
             "Allocation of '%s' failed. (%llu bytes)",
@@ -43,47 +45,84 @@ RawDataPathInitialize(
             DatapathSize);
         return;
     }
-    CxPlatZeroMemory(DataPath, DatapathSize);
+    CxPlatZeroMemory(RawDataPath, DatapathSize);
     CXPLAT_FRE_ASSERT(CxPlatWorkerPoolAddRef(WorkerPool, CXPLAT_WORKER_POOL_REF_RAW));
 
-    DataPath->WorkerPool = WorkerPool;
+    RawDataPath->WorkerPool = WorkerPool;
 
-    if (!CxPlatSockPoolInitialize(&DataPath->SocketPool)) {
+    if (!CxPlatSockPoolInitialize(&RawDataPath->SocketPool)) {
         goto Error;
     }
     SockPoolInitialized = TRUE;
 
-    Status = CxPlatDpRawInitialize(DataPath, ClientRecvContextLength, WorkerPool);
+    Status = CxPlatDpRawInitialize(RawDataPath, ClientRecvContextLength, WorkerPool);
     if (QUIC_FAILED(Status)) {
         goto Error;
     }
     DpRawInitialized = TRUE;
 
-    Status = CxPlatDataPathRouteWorkerInitialize(DataPath);
+    Status = CxPlatDataPathRouteWorkerInitialize(RawDataPath);
     if (QUIC_FAILED(Status)) {
         goto Error;
     }
+    RouteWorkerInitialized = TRUE;
 
-    *NewDataPath = DataPath;
-    DataPath->ParentDataPath = ParentDataPath;
-    DataPath = NULL;
+    if (InitConfig->XdpMapConfigCount > 0) {
+        CXPLAT_DBG_ASSERT(InitConfig->XdpMapConfigs != NULL);
+        CxPlatDpRawEnableRawDatapathOnly(RawDataPath);
+        Status =
+            CxPlatDpRawApplyMapConfigs(
+                RawDataPath,
+                InitConfig->XdpMapConfigs,
+                InitConfig->XdpMapConfigCount);
+        if (QUIC_FAILED(Status)) {
+            QuicTraceLogVerbose(
+                DatapathRawMapInsertFail,
+                "[  dp] XDP map mode: failed to insert XSK sockets into map, status:%d",
+                Status);
+            goto Error;
+        }
+    }
+
+    *NewDataPath = RawDataPath;
+    RawDataPath->ParentDataPath = ParentDataPath;
+    RawDataPath = NULL;
 
 Error:
 
-    if (DataPath != NULL) {
+    if (RawDataPath != NULL) {
 #if DEBUG
-        DataPath->Uninitialized = TRUE;
+        RawDataPath->Uninitialized = TRUE;
 #endif
+        if (RouteWorkerInitialized) {
+            CxPlatDataPathRouteWorkerUninitialize(RawDataPath->RouteResolutionWorker);
+        }
         if (DpRawInitialized) {
-            CxPlatDpRawUninitialize(DataPath);
+            CxPlatDpRawUninitialize(RawDataPath);
         } else {
             if (SockPoolInitialized) {
-                CxPlatSockPoolUninitialize(&DataPath->SocketPool);
+                CxPlatSockPoolUninitialize(&RawDataPath->SocketPool);
             }
-            CXPLAT_FREE(DataPath, QUIC_POOL_DATAPATH);
+            CXPLAT_FREE(RawDataPath, QUIC_POOL_DATAPATH);
             CxPlatWorkerPoolRelease(WorkerPool, CXPLAT_WORKER_POOL_REF_RAW);
         }
     }
+}
+
+BOOLEAN
+CxPlatDpRawIsRawDatapathOnly(
+    _In_opt_ const CXPLAT_DATAPATH_RAW* RawDataPath
+    )
+{
+    return RawDataPath != NULL && RawDataPath->RawDatapathOnly;
+}
+
+void
+CxPlatDpRawEnableRawDatapathOnly(
+    _In_ CXPLAT_DATAPATH_RAW* RawDataPath
+    )
+{
+    RawDataPath->RawDatapathOnly = TRUE;
 }
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
@@ -98,6 +137,7 @@ RawDataPathUninitialize(
         CXPLAT_DBG_ASSERT(!Datapath->Uninitialized);
         Datapath->Uninitialized = TRUE;
 #endif
+        CxPlatDpRawCleanupMapConfigs(Datapath);
         CxPlatDataPathRouteWorkerUninitialize(Datapath->RouteResolutionWorker);
         CxPlatDpRawUninitialize(Datapath);
     }
@@ -174,7 +214,19 @@ RawSocketDelete(
     _In_ CXPLAT_SOCKET_RAW* Socket
     )
 {
-    CxPlatDpRawPlumbRulesOnSocket(Socket, FALSE);
+    //
+    // Rule removal on socket deletion is best-effort. A failure here means
+    // some XDP rules may linger until the interface is reinitialized, but
+    // there is nothing useful we can do at this point.
+    //
+    QUIC_STATUS PlumbStatus = CxPlatDpRawPlumbRulesOnSocket(Socket, FALSE);
+    if (QUIC_FAILED(PlumbStatus)) {
+        QuicTraceEvent(
+            LibraryErrorStatus,
+            "[ lib] ERROR, %u, %s.",
+            PlumbStatus,
+            "CxPlatDpRawPlumbRulesOnSocket (delete)");
+    }
     CxPlatRemoveSocket(&Socket->RawDatapath->SocketPool, Socket);
     CxPlatRundownReleaseAndWait(&Socket->RawRundown);
     if (Socket->PausedTcpSend) {
@@ -216,11 +268,12 @@ CxPlatDpRawRxEthernet(
                 CxPlatGetSocket(
                     &Datapath->SocketPool,
                     &PacketChain->Route->LocalAddress,
-                    &PacketChain->Route->RemoteAddress);
+                    &PacketChain->Route->RemoteAddress,
+                    PacketChain->Route->UseQTIP);
         }
 
         if (Socket) {
-            CXPLAT_DBG_ASSERT(!Socket->HasFixedRemoteAddress || Socket->ReserveAuxTcpSock == PacketChain->Route->UseQTIP);
+            CXPLAT_DBG_ASSERT(!Socket->HasFixedRemoteAddress || Socket->ReserveAuxTcpSockForQtip == PacketChain->Route->UseQTIP);
             if (PacketChain->Reserved == L4_TYPE_UDP || PacketChain->Reserved == L4_TYPE_TCP) {
                 uint8_t SocketType = PacketChain->Route->UseQTIP ? L4_TYPE_TCP : L4_TYPE_UDP;
                 //
@@ -238,7 +291,7 @@ CxPlatDpRawRxEthernet(
                     if (i == PacketCount - 1 ||
                         Packets[i+1]->Reserved != SocketType ||
                         Packets[i+1]->Route->LocalAddress.Ipv4.sin_port != Socket->LocalAddress.Ipv4.sin_port ||
-                        !CxPlatSocketCompare(Socket, &Packets[i+1]->Route->LocalAddress, &Packets[i+1]->Route->RemoteAddress)) {
+                        !CxPlatSocketCompare(Socket, &Packets[i+1]->Route->LocalAddress, &Packets[i+1]->Route->RemoteAddress, Packets[i+1]->Route->UseQTIP)) {
                         break;
                     }
                     Packets[i]->Next = Packets[i+1];
@@ -335,7 +388,7 @@ RawSocketSend(
     _In_ CXPLAT_SEND_DATA* SendData
     )
 {
-    CXPLAT_DBG_ASSERT(!Socket->HasFixedRemoteAddress || Route->UseQTIP == Socket->ReserveAuxTcpSock);
+    CXPLAT_DBG_ASSERT(!Socket->HasFixedRemoteAddress || Route->UseQTIP == Socket->ReserveAuxTcpSockForQtip);
     if (Route->UseQTIP &&
         Socket->Connected &&
         Route->TcpState.Syncd == FALSE) {
@@ -345,8 +398,8 @@ RawSocketSend(
     }
 
     QuicTraceEvent(
-        DatapathSend,
-        "[data][%p] Send %u bytes in %hhu buffers (segment=%hu) Dst=%!ADDR!, Src=%!ADDR!",
+        RawDatapathSend,
+        "[data][%p] Raw send %u bytes in %hhu buffers (segment=%hu) Dst=%!ADDR!, Src=%!ADDR!",
         Socket,
         SendData->Buffer.Length,
         1,

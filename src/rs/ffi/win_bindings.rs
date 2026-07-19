@@ -169,6 +169,7 @@ pub const QUIC_PARAM_GLOBAL_TLS_PROVIDER: u32 = 16777226;
 pub const QUIC_PARAM_GLOBAL_STATELESS_RESET_KEY: u32 = 16777227;
 pub const QUIC_PARAM_GLOBAL_STATISTICS_V2_SIZES: u32 = 16777228;
 pub const QUIC_PARAM_GLOBAL_STATELESS_RETRY_CONFIG: u32 = 16777229;
+pub const QUIC_PARAM_GLOBAL_XDP_MAP_CONFIG: u32 = 16777230;
 pub const QUIC_PARAM_CONFIGURATION_SETTINGS: u32 = 50331648;
 pub const QUIC_PARAM_CONFIGURATION_TICKET_KEYS: u32 = 50331649;
 pub const QUIC_PARAM_CONFIGURATION_VERSION_SETTINGS: u32 = 50331650;
@@ -222,6 +223,7 @@ pub type BYTE = ::std::os::raw::c_uchar;
 pub type HRESULT = ::std::os::raw::c_long;
 pub type BOOLEAN = BYTE;
 pub type QUIC_ADDRESS_FAMILY = ADDRESS_FAMILY;
+pub type QUIC_XDP_MAP_HANDLE = HANDLE;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct QUIC_ADDR_STR {
@@ -499,6 +501,20 @@ pub type QUIC_EXECUTION_DELETE_FN =
     ::std::option::Option<unsafe extern "C" fn(Count: u32, Executions: *mut *mut QUIC_EXECUTION)>;
 pub type QUIC_EXECUTION_POLL_FN =
     ::std::option::Option<unsafe extern "C" fn(Execution: *mut QUIC_EXECUTION) -> u32>;
+#[repr(C)]
+pub struct QUIC_XDP_MAP_CONFIG {
+    pub InterfaceIndex: u32,
+    pub MapHandle: QUIC_XDP_MAP_HANDLE,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of QUIC_XDP_MAP_CONFIG"][::std::mem::size_of::<QUIC_XDP_MAP_CONFIG>() - 16usize];
+    ["Alignment of QUIC_XDP_MAP_CONFIG"][::std::mem::align_of::<QUIC_XDP_MAP_CONFIG>() - 8usize];
+    ["Offset of field: QUIC_XDP_MAP_CONFIG::InterfaceIndex"]
+        [::std::mem::offset_of!(QUIC_XDP_MAP_CONFIG, InterfaceIndex) - 0usize];
+    ["Offset of field: QUIC_XDP_MAP_CONFIG::MapHandle"]
+        [::std::mem::offset_of!(QUIC_XDP_MAP_CONFIG, MapHandle) - 8usize];
+};
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct QUIC_REGISTRATION_CONFIG {
@@ -1189,10 +1205,16 @@ pub struct QUIC_STATISTICS_V2 {
     pub SendEcnCongestionCount: u32,
     pub HandshakeHopLimitTTL: u8,
     pub RttVariance: u32,
+    pub ConnectionQueueDelayAvgUs: u32,
+    pub ConnectionQueueDelayMaxUs: u32,
+    pub SendQueueDelayAvgUs: u32,
+    pub SendQueueDelayMaxUs: u32,
+    pub ReceiveQueueDelayAvgUs: u32,
+    pub ReceiveQueueDelayMaxUs: u32,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of QUIC_STATISTICS_V2"][::std::mem::size_of::<QUIC_STATISTICS_V2>() - 208usize];
+    ["Size of QUIC_STATISTICS_V2"][::std::mem::size_of::<QUIC_STATISTICS_V2>() - 232usize];
     ["Alignment of QUIC_STATISTICS_V2"][::std::mem::align_of::<QUIC_STATISTICS_V2>() - 8usize];
     ["Offset of field: QUIC_STATISTICS_V2::CorrelationId"]
         [::std::mem::offset_of!(QUIC_STATISTICS_V2, CorrelationId) - 0usize];
@@ -1260,6 +1282,18 @@ const _: () = {
         [::std::mem::offset_of!(QUIC_STATISTICS_V2, HandshakeHopLimitTTL) - 200usize];
     ["Offset of field: QUIC_STATISTICS_V2::RttVariance"]
         [::std::mem::offset_of!(QUIC_STATISTICS_V2, RttVariance) - 204usize];
+    ["Offset of field: QUIC_STATISTICS_V2::ConnectionQueueDelayAvgUs"]
+        [::std::mem::offset_of!(QUIC_STATISTICS_V2, ConnectionQueueDelayAvgUs) - 208usize];
+    ["Offset of field: QUIC_STATISTICS_V2::ConnectionQueueDelayMaxUs"]
+        [::std::mem::offset_of!(QUIC_STATISTICS_V2, ConnectionQueueDelayMaxUs) - 212usize];
+    ["Offset of field: QUIC_STATISTICS_V2::SendQueueDelayAvgUs"]
+        [::std::mem::offset_of!(QUIC_STATISTICS_V2, SendQueueDelayAvgUs) - 216usize];
+    ["Offset of field: QUIC_STATISTICS_V2::SendQueueDelayMaxUs"]
+        [::std::mem::offset_of!(QUIC_STATISTICS_V2, SendQueueDelayMaxUs) - 220usize];
+    ["Offset of field: QUIC_STATISTICS_V2::ReceiveQueueDelayAvgUs"]
+        [::std::mem::offset_of!(QUIC_STATISTICS_V2, ReceiveQueueDelayAvgUs) - 224usize];
+    ["Offset of field: QUIC_STATISTICS_V2::ReceiveQueueDelayMaxUs"]
+        [::std::mem::offset_of!(QUIC_STATISTICS_V2, ReceiveQueueDelayMaxUs) - 228usize];
 };
 impl QUIC_STATISTICS_V2 {
     #[inline]
@@ -1677,7 +1711,11 @@ pub const QUIC_PERFORMANCE_COUNTERS_QUIC_PERF_COUNTER_CONN_LOAD_REJECT: QUIC_PER
     31;
 pub const QUIC_PERFORMANCE_COUNTERS_QUIC_PERF_COUNTER_LISTEN_QUEUE_DEPTH:
     QUIC_PERFORMANCE_COUNTERS = 32;
-pub const QUIC_PERFORMANCE_COUNTERS_QUIC_PERF_COUNTER_MAX: QUIC_PERFORMANCE_COUNTERS = 33;
+pub const QUIC_PERFORMANCE_COUNTERS_QUIC_PERF_COUNTER_ENCRYPT_DURATION_US:
+    QUIC_PERFORMANCE_COUNTERS = 33;
+pub const QUIC_PERFORMANCE_COUNTERS_QUIC_PERF_COUNTER_DECRYPT_DURATION_US:
+    QUIC_PERFORMANCE_COUNTERS = 34;
+pub const QUIC_PERFORMANCE_COUNTERS_QUIC_PERF_COUNTER_MAX: QUIC_PERFORMANCE_COUNTERS = 35;
 pub type QUIC_PERFORMANCE_COUNTERS = ::std::os::raw::c_int;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -6020,6 +6058,36 @@ pub type QUIC_CONNECTION_COMP_CERT_FN = ::std::option::Option<
         TlsAlert: QUIC_TLS_ALERT_CODES,
     ) -> HRESULT,
 >;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct QUIC_KEYING_MATERIAL_CONFIG {
+    pub Label: *const ::std::os::raw::c_char,
+    pub ContextLength: u32,
+    pub Context: *const u8,
+    pub OutputLength: u32,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of QUIC_KEYING_MATERIAL_CONFIG"]
+        [::std::mem::size_of::<QUIC_KEYING_MATERIAL_CONFIG>() - 32usize];
+    ["Alignment of QUIC_KEYING_MATERIAL_CONFIG"]
+        [::std::mem::align_of::<QUIC_KEYING_MATERIAL_CONFIG>() - 8usize];
+    ["Offset of field: QUIC_KEYING_MATERIAL_CONFIG::Label"]
+        [::std::mem::offset_of!(QUIC_KEYING_MATERIAL_CONFIG, Label) - 0usize];
+    ["Offset of field: QUIC_KEYING_MATERIAL_CONFIG::ContextLength"]
+        [::std::mem::offset_of!(QUIC_KEYING_MATERIAL_CONFIG, ContextLength) - 8usize];
+    ["Offset of field: QUIC_KEYING_MATERIAL_CONFIG::Context"]
+        [::std::mem::offset_of!(QUIC_KEYING_MATERIAL_CONFIG, Context) - 16usize];
+    ["Offset of field: QUIC_KEYING_MATERIAL_CONFIG::OutputLength"]
+        [::std::mem::offset_of!(QUIC_KEYING_MATERIAL_CONFIG, OutputLength) - 24usize];
+};
+pub type QUIC_CONNECTION_EXPORT_KEYING_MATERIAL_FN = ::std::option::Option<
+    unsafe extern "C" fn(
+        Connection: HQUIC,
+        Config: *const QUIC_KEYING_MATERIAL_CONFIG,
+        Output: *mut u8,
+    ) -> HRESULT,
+>;
 pub const QUIC_STREAM_EVENT_TYPE_QUIC_STREAM_EVENT_START_COMPLETE: QUIC_STREAM_EVENT_TYPE = 0;
 pub const QUIC_STREAM_EVENT_TYPE_QUIC_STREAM_EVENT_RECEIVE: QUIC_STREAM_EVENT_TYPE = 1;
 pub const QUIC_STREAM_EVENT_TYPE_QUIC_STREAM_EVENT_SEND_COMPLETE: QUIC_STREAM_EVENT_TYPE = 2;
@@ -6675,10 +6743,11 @@ pub struct QUIC_API_TABLE {
     pub ExecutionDelete: QUIC_EXECUTION_DELETE_FN,
     pub ExecutionPoll: QUIC_EXECUTION_POLL_FN,
     pub RegistrationClose2: QUIC_REGISTRATION_CLOSE2_FN,
+    pub ConnectionExportKeyingMaterial: QUIC_CONNECTION_EXPORT_KEYING_MATERIAL_FN,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of QUIC_API_TABLE"][::std::mem::size_of::<QUIC_API_TABLE>() - 304usize];
+    ["Size of QUIC_API_TABLE"][::std::mem::size_of::<QUIC_API_TABLE>() - 312usize];
     ["Alignment of QUIC_API_TABLE"][::std::mem::align_of::<QUIC_API_TABLE>() - 8usize];
     ["Offset of field: QUIC_API_TABLE::SetContext"]
         [::std::mem::offset_of!(QUIC_API_TABLE, SetContext) - 0usize];
@@ -6760,6 +6829,8 @@ const _: () = {
         [::std::mem::offset_of!(QUIC_API_TABLE, ExecutionPoll) - 288usize];
     ["Offset of field: QUIC_API_TABLE::RegistrationClose2"]
         [::std::mem::offset_of!(QUIC_API_TABLE, RegistrationClose2) - 296usize];
+    ["Offset of field: QUIC_API_TABLE::ConnectionExportKeyingMaterial"]
+        [::std::mem::offset_of!(QUIC_API_TABLE, ConnectionExportKeyingMaterial) - 304usize];
 };
 pub const QUIC_STATUS_SUCCESS: QUIC_STATUS = 0;
 pub const QUIC_STATUS_PENDING: QUIC_STATUS = 459749;

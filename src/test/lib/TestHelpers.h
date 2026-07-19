@@ -9,11 +9,14 @@ Abstract:
 
 --*/
 
+#pragma once
+
 #ifdef QUIC_CLOG
 #include "TestHelpers.h.clog.h"
 #endif
 
 extern bool UseDuoNic;
+extern bool UseXdpMapMode;
 
 //
 // Connect to the duonic address (if using duonic) or localhost (if not).
@@ -94,6 +97,121 @@ QuitTestIsFeatureSupported(uint32_t Feature) {
 #include "msquic.hpp"
 #include "quic_toeplitz.h"
 
+#if defined(_WIN32) && !defined(_KERNEL_MODE)
+//
+// Reserves an ephemeral port by binding both a UDP and TCP socket to the same
+// port. The sockets stay open to hold the reservation until Release() is called
+// (or the object is destroyed). This minimizes the TOCTOU window between
+// discovering a free port and having the listener bind to it.
+//
+struct QuicTestPortReservation {
+    uint16_t Port{0};
+
+    QuicTestPortReservation() = default;
+
+    QuicTestPortReservation(
+        _In_ QUIC_ADDRESS_FAMILY Family
+        )
+    {
+        int af = (Family == QUIC_ADDRESS_FAMILY_INET) ? AF_INET : AF_INET6;
+        int AddrSize =
+            (af == AF_INET) ?
+                (int)sizeof(struct sockaddr_in) :
+                (int)sizeof(struct sockaddr_in6);
+
+        //
+        // Reserve both a UDP and TCP port on the same ephemeral port number.
+        // Retry when the UDP ephemeral port collides with an in-use TCP port.
+        //
+        for (int Attempt = 0; Attempt < 1000; Attempt++) {
+            UdpSock = socket(af, SOCK_DGRAM, IPPROTO_UDP);
+            if (UdpSock == INVALID_SOCKET) {
+                return;
+            }
+
+            BOOL RandomizePort = TRUE;
+            (void)setsockopt(
+                UdpSock, SOL_SOCKET, SO_RANDOMIZE_PORT,
+                (const char*)&RandomizePort, sizeof(RandomizePort));
+
+            QUIC_ADDR Addr{};
+            QuicAddrSetFamily(&Addr, Family);
+
+            if (bind(UdpSock, (struct sockaddr*)&Addr, AddrSize) != 0) {
+                Release();
+                return;
+            }
+
+            int AddrLen = AddrSize;
+            if (getsockname(UdpSock, (struct sockaddr*)&Addr, &AddrLen) != 0) {
+                Release();
+                return;
+            }
+
+            Port = QuicAddrGetPort(&Addr);
+            //
+            // Bind to port 0 should always assign a real port.
+            //
+            CXPLAT_DBG_ASSERT(Port != 0);
+
+            //
+            // Also reserve the same port for TCP. CIBIR+XDP servers skip OS
+            // socket creation (for cross-process port sharing), leaving TCP
+            // port N free. Without this, a client's auxiliary TCP socket could
+            // be assigned port N by the OS, colliding with the server's entry
+            // in the raw socket pool.
+            //
+            TcpSock = socket(af, SOCK_STREAM, IPPROTO_TCP);
+            if (TcpSock == INVALID_SOCKET) {
+                Release();
+                return;
+            }
+
+            if (bind(TcpSock, (struct sockaddr*)&Addr, AddrSize) != 0) {
+                //
+                // TCP port is occupied; close both and retry for a new port.
+                //
+                Release();
+                continue;
+            }
+
+            QuicTraceLogVerbose(
+                TestPortReservation,
+                "[test] Port reservation: port=%u, attempts=%d",
+                Port,
+                Attempt + 1);
+            return;
+        }
+    }
+
+    ~QuicTestPortReservation() { Release(); }
+
+    QuicTestPortReservation(const QuicTestPortReservation&) = delete;
+    QuicTestPortReservation& operator=(const QuicTestPortReservation&) = delete;
+
+    //
+    // Releases the port reservation by closing the held sockets. Call this
+    // immediately before the listener binds to the same port.
+    //
+    void Release()
+    {
+        if (UdpSock != INVALID_SOCKET) {
+            closesocket(UdpSock);
+            UdpSock = INVALID_SOCKET;
+        }
+        if (TcpSock != INVALID_SOCKET) {
+            closesocket(TcpSock);
+            TcpSock = INVALID_SOCKET;
+        }
+        Port = 0;
+    }
+
+private:
+    SOCKET UdpSock{INVALID_SOCKET};
+    SOCKET TcpSock{INVALID_SOCKET};
+};
+#endif // _WIN32 && !_KERNEL_MODE
+
 #define OLD_SUPPORTED_VERSION       QUIC_VERSION_1_MS_H
 #define LATEST_SUPPORTED_VERSION    QUIC_VERSION_LATEST_H
 
@@ -123,7 +241,7 @@ class TestConnection;
 
 struct ServerAcceptContext {
     CXPLAT_EVENT NewConnectionReady;
-    TestConnection** NewConnection;
+    UniquePtr<TestConnection>* NewConnection;
     void* NewStreamHandler{nullptr};
     QUIC_TLS_SECRETS* TlsSecrets{nullptr};
     QUIC_STATUS ExpectedTransportCloseStatus{QUIC_STATUS_SUCCESS};
@@ -136,7 +254,7 @@ struct ServerAcceptContext {
     bool AsyncCustomCertValidation{false};
     bool IsCustomCertValidationResultSet{false};
     bool CustomCertValidationResult{false};
-    ServerAcceptContext(TestConnection** _NewConnection) :
+    ServerAcceptContext(UniquePtr<TestConnection>* _NewConnection) :
         NewConnection(_NewConnection) {
         CxPlatEventInitialize(&NewConnectionReady, TRUE, FALSE);
     }
@@ -1062,29 +1180,15 @@ WaitForMsQuicInUse() {
     return MsQuicInUse && Status == QUIC_STATUS_SUCCESS;
 }
 
-//
-// Call Condition every RetryIntervalMs until TimeoutMs has elapsed.
-// Returns QUIC_STATUS_CONNECTION_TIMEOUT if it runs until TimeoutMs
-// has elapsed.
-// The Condition lambda takes no parameters, and returns a QUIC_STATUS.
-// If Condition returns QUIC_STATUS_CONTINUE, TryUntil will keep trying.
-// Any other QUIC_STATUS, TryUntil will stop and return that value.
-//
-template<class Predicate>
-QUIC_STATUS
-TryUntil(
-    uint32_t RetryIntervalMs,
-    uint32_t TimeoutMs,
-    Predicate Condition)
-{
-    uint32_t Tries = TimeoutMs / RetryIntervalMs + 1;
-    for (uint32_t i = 0; i < Tries; i++) {
-        QUIC_STATUS Status = Condition();
-        if (Status == QUIC_STATUS_CONTINUE) {
-            CxPlatSleep(RetryIntervalMs);
-        } else {
-            return Status;
-        }
-    }
-    return QUIC_STATUS_CONNECTION_TIMEOUT;
+_IRQL_requires_max_(PASSIVE_LEVEL)
+QUIC_INLINE
+void
+DrainConnectionWorkQueue(HQUIC Connection) {
+    //
+    // Call the GetParam API: it schedules a work item on the connection and waits for its completion,
+    // ensuring all prior work items have completed.
+    //
+    QUIC_STATISTICS_V2 Stats{};
+    uint32_t StatsSize = sizeof(Stats);
+    (void)MsQuic->GetParam(Connection, QUIC_PARAM_CONN_STATISTICS_V2, &StatsSize, &Stats);
 }

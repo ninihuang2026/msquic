@@ -62,6 +62,9 @@ as necessary.
 .PARAMETER DuoNic
     Uses DuoNic instead of loopback.
 
+.PARAMETER XdpMapMode
+    Uses XDP map mode with DuoNic.
+
 #>
 
 param (
@@ -134,6 +137,9 @@ param (
     [switch]$DuoNic = $false,
 
     [Parameter(Mandatory = $false)]
+    [switch]$XdpMapMode = $false,
+
+    [Parameter(Mandatory = $false)]
     [string]$OsRunner = "",
 
     [Parameter(Mandatory = $false)]
@@ -195,18 +201,17 @@ if ($Kernel -ne "" -and !$IsWindows) {
 
 # Validate the code coverage switch
 if ($CodeCoverage) {
-    if (!$IsWindows) {
-        Write-Error "-CodeCoverage switch only supported on Windows";
-    }
     if ($Debugger) {
         Write-Error "-CodeCoverage switch is not supported with debugging";
     }
     if ($Kernel -ne "") {
         Write-Error "-CodeCoverage is not supported for kernel mode tests";
     }
-    if (!(Test-Path "C:\Program Files\OpenCppCoverage\OpenCppCoverage.exe")) {
+    if ($IsWindows -and !(Test-Path "C:\Program Files\OpenCppCoverage\OpenCppCoverage.exe")) {
         Write-Error "Code coverage tools are not installed";
-    }
+    } elseif ($IsLinux -and !(Get-Command gcovr -ErrorAction SilentlyContinue)) {
+        Write-Error "Code coverage tools for linux (gcovr) are not installed (missing 'gcovr')."
+    } 
 }
 
 # Root directory of the project.
@@ -404,6 +409,9 @@ function Start-TestCase([String]$Name) {
     if ($DuoNic) {
         $Arguments += " --duoNic"
     }
+    if ($XdpMapMode) {
+        $Arguments += " --xdpMapMode"
+    }
     if ($UseQtip) {
         $Arguments += " --useQTIP"
     }
@@ -451,6 +459,9 @@ function Start-AllTestCases {
     if ($DuoNic) {
         $Arguments += " --duoNic"
     }
+    if ($XdpMapMode) {
+        $Arguments += " --xdpMapMode"
+    }
     if ($UseQtip) {
         $Arguments += " --useQTIP"
     }
@@ -493,7 +504,7 @@ function PrintDumpCallStack($DumpFile) {
 
 function PrintLldbCoreCallStack($CoreFile) {
     try {
-        $Output = lldb $Path -c $CoreFile -b -o "`"bt all`""
+        $Output = lldb $Path -c $CoreFile -b -o "bt all"
         Write-Host "=================================================================================="
         Write-Host " $(Split-Path $CoreFile -Leaf)"
         Write-Host "=================================================================================="
@@ -528,7 +539,7 @@ function PrintLldbCoreCallStack($CoreFile) {
 
 function PrintGdbCoreCallStack($CoreFile) {
     try {
-        $Output = gdb $Path $CoreFile -batch -ex "`"bt`"" -ex "`"quit`""
+        $Output = gdb $Path $CoreFile -batch -ex "bt" -ex "quit"
         Write-Host "=================================================================================="
         Write-Host " $(Split-Path $CoreFile -Leaf)"
         Write-Host "=================================================================================="
@@ -619,29 +630,33 @@ function Wait-TestCase($TestCase) {
         }
 
         if ($CodeCoverage) {
-            $NewCoverage = Join-Path $TestCase.LogDir $Coveragename
-            if ($IsolationMode -eq "Isolated") {
-                # Merge coverage with previous runs
-                $PreviousCoverage = Join-Path $CoverageDir $CoverageName
-                if (!(Test-Path $PreviousCoverage)) {
-                    # No previous coverage data, just copy
-                    Copy-Item $NewCoverage $CoverageDir
+            if ($IsWindows) {
+                $NewCoverage = Join-Path $TestCase.LogDir $Coveragename
+                if ($IsolationMode -eq "Isolated") {
+                    # Merge coverage with previous runs
+                    $PreviousCoverage = Join-Path $CoverageDir $CoverageName
+                    if (!(Test-Path $PreviousCoverage)) {
+                        # No previous coverage data, just copy
+                        Copy-Item $NewCoverage $CoverageDir
+                    } else {
+                        # Merge new coverage data with existing coverage data
+                        # On a developer machine, this will always merge coverage until the dev deletes old coverage.
+                        $TempMergedCoverage = Join-Path $CoverageDir "mergetemp.cov"
+                        $CoverageExe = 'C:\"Program Files"\OpenCppCoverage\OpenCppCoverage.exe'
+                        $CoverageMergeParams = " --input_coverage $($PreviousCoverage) --input_coverage $($NewCoverage) --export_type binary:$($TempMergedCoverage)"
+                        Invoke-Expression ($CoverageExe + $CoverageMergeParams) | Out-Null
+                        Move-Item $TempMergedCoverage $PreviousCoverage -Force
+                    }
                 } else {
-                    # Merge new coverage data with existing coverage data
-                    # On a developer machine, this will always merge coverage until the dev deletes old coverage.
-                    $TempMergedCoverage = Join-Path $CoverageDir "mergetemp.cov"
-                    $CoverageExe = 'C:\"Program Files"\OpenCppCoverage\OpenCppCoverage.exe'
-                    $CoverageMergeParams = " --input_coverage $($PreviousCoverage) --input_coverage $($NewCoverage) --export_type binary:$($TempMergedCoverage)"
-                    Invoke-Expression ($CoverageExe + $CoverageMergeParams) | Out-Null
-                    Move-Item $TempMergedCoverage $PreviousCoverage -Force
+                    # Copy the coverage to destination
+                    Copy-Item $NewCoverage $CoverageDir -Force
+                    # Copy coverage log
+                    $LogName = "LastCoverageResults-$(Split-Path $Path -LeafBase).log"
+                    Copy-Item (Join-Path $TestCase.LogDir "LastCoverageResults.log") (Join-Path $CoverageDir $LogName) -Force
                 }
-            } else {
-                # Copy the coverage to destination
-                Copy-Item $NewCoverage $CoverageDir -Force
-                # Copy coverage log
-                $LogName = "LastCoverageResults-$(Split-Path $Path -LeafBase).log"
-                Copy-Item (Join-Path $TestCase.LogDir "LastCoverageResults.log") (Join-Path $CoverageDir $LogName) -Force
             }
+            # On Linux, .gcda files are automatically written to the build directory
+            # Coverage is collected at the end via gcovr in test.ps1
         }
 
         if ($ProcessCrashed) {

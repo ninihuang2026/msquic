@@ -342,6 +342,15 @@ QuicBindingGetRemoteAddress(
     );
 
 //
+// Queries the QTIP settings of the binding.
+//
+_IRQL_requires_max_(DISPATCH_LEVEL)
+BOOLEAN
+QuicBindingGetQtipEnabled(
+    _In_ const QUIC_BINDING* Binding
+    );
+
+//
 // Looks up the listener based on the ALPN list. Optionally, outputs the
 // first ALPN that matches.
 //
@@ -541,6 +550,7 @@ QuicRetryTokenDecrypt(
         return FALSE;
     }
 
+    uint64_t DecryptStart = CxPlatTimeUs64();
     QUIC_STATUS Status =
         CxPlatDecrypt(
             StatelessRetryKey,
@@ -549,6 +559,10 @@ QuicRetryTokenDecrypt(
             (uint8_t*) &Token->Authenticated,
             sizeof(Token->Encrypted) + sizeof(Token->EncryptionTag),
             (uint8_t*)&Token->Encrypted);
+    QuicPerfCounterAdd(
+        Partition,
+        QUIC_PERF_COUNTER_DECRYPT_DURATION_US,
+        (int64_t)CxPlatTimeDiff64(DecryptStart, CxPlatTimeUs64()));
 
     CxPlatDispatchLockRelease(&Partition->StatelessRetryKeysLock);
     return QUIC_SUCCEEDED(Status);

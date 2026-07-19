@@ -60,9 +60,6 @@ This script provides helpers for building msquic.
 .PARAMETER PGO
     Builds msquic with profile guided optimization support (Windows-only).
 
-.PARAMETER UseXdp
-    Enables XDP support (Linux-only).
-
 .PARAMETER UseIoUring
     Enables io_uring support (Linux-only).
 
@@ -94,7 +91,7 @@ This script provides helpers for building msquic.
     Enables telemetry asserts in release builds.
 
 .PARAMETER UseSystemOpenSSLCrypto
-    Use system provided OpenSSL libcrypto rather then statically linked. Only affects OpenSSL Linux builds
+    Use system provided OpenSSL crypto libraries. On Linux OpenSSL builds, both libssl and libcrypto are dynamically linked.
 
 .PARAMETER EnableHighResolutionTimers
     Configures the system to use high resolution timers.
@@ -111,6 +108,9 @@ This script provides helpers for building msquic.
 .PARAMETER OneBranch
     Build is occuring from Onebranch pipeline.
 
+.PARAMETER EnableGCov
+    Builds with code coverage instrumentation enabled (Linux-only, uses gcov).
+
 .EXAMPLE
     build.ps1
 
@@ -119,7 +119,7 @@ This script provides helpers for building msquic.
 
 #>
 
-#Requires -Version 7.2
+#Requires -Version 7.0
 
 param (
     [Parameter(Mandatory = $false)]
@@ -181,9 +181,6 @@ param (
     [switch]$PGO = $false,
 
     [Parameter(Mandatory = $false)]
-    [switch]$UseXdp = $false,
-
-    [Parameter(Mandatory = $false)]
     [switch]$UseIoUring = $false,
 
     [Parameter(Mandatory = $false)]
@@ -235,7 +232,10 @@ param (
     [switch]$OneBranch = $false,
 
     [Parameter(Mandatory = $false)]
-    [string]$ToolchainFile = ""
+    [string]$ToolchainFile = "",
+
+    [Parameter(Mandatory = $false)]
+    [switch]$EnableGCov = $false
 )
 
 Set-StrictMode -Version 'Latest'
@@ -260,7 +260,7 @@ if ($Generator -eq "") {
     if (!$IsWindows) {
         $Generator = "Unix Makefiles"
     } else {
-        $Generator = "Visual Studio 17 2022"
+        $Generator = "Visual Studio 18 2026"
     }
 }
 
@@ -285,12 +285,6 @@ if ($Arch -eq "arm64ec") {
     }
     if ($Tls -eq "quictls" -Or $Tls -eq "openssl") {
         Write-Error "Arm64EC does not support quictls/openssl"
-    }
-}
-
-if ($IsLinux -And $Arch -ne "x64") {
-    if ($UseXdp) {
-        Write-Error "Linux XDP is supported only on x64 platforms"
     }
 }
 
@@ -490,9 +484,6 @@ function CMake-Generate {
     if ($PGO) {
         $Arguments += " -DQUIC_PGO=on"
     }
-    if ($UseXdp) {
-        $Arguments += " -DQUIC_LINUX_XDP_ENABLED=on"
-    }
     if ($UseIoUring) {
         $Arguments += " -DQUIC_LINUX_IOURING_ENABLED=on"
     }
@@ -527,6 +518,13 @@ function CMake-Generate {
     }
     if ($EnableHighResolutionTimers) {
         $Arguments += " -DQUIC_HIGH_RES_TIMERS=on"
+    }
+    if ($EnableGCov) {
+        if ($IsLinux) {
+            $Arguments += " -DCMAKE_C_FLAGS=--coverage -DCMAKE_CXX_FLAGS=--coverage"
+        } else {
+            Write-Warning "-EnableGCov is only supported on Linux systems. Ignoring flag."
+        } 
     }
     if ($Platform -eq "android") {
         $NDK = $env:ANDROID_NDK_LATEST_HOME

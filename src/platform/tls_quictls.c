@@ -1708,18 +1708,20 @@ CxPlatTlsInitialize(
                 goto Exit;
             }
 
-            TlsContext->SNI = CXPLAT_ALLOC_NONPAGED(ServerNameLength + 1, QUIC_POOL_TLS_SNI);
-            if (TlsContext->SNI == NULL) {
-                QuicTraceEvent(
-                    AllocFailure,
-                    "Allocation of '%s' failed. (%llu bytes)",
-                    "SNI",
-                    ServerNameLength + 1);
-                Status = QUIC_STATUS_OUT_OF_MEMORY;
-                goto Exit;
-            }
+            if (!CxPlatIsIpLiteral(Config->ServerName)) {
+                TlsContext->SNI = CXPLAT_ALLOC_NONPAGED(ServerNameLength + 1, QUIC_POOL_TLS_SNI);
+                if (TlsContext->SNI == NULL) {
+                    QuicTraceEvent(
+                        AllocFailure,
+                        "Allocation of '%s' failed. (%llu bytes)",
+                        "SNI",
+                        ServerNameLength + 1);
+                    Status = QUIC_STATUS_OUT_OF_MEMORY;
+                    goto Exit;
+                }
 
-            memcpy((char*)TlsContext->SNI, Config->ServerName, ServerNameLength + 1);
+                memcpy((char*)TlsContext->SNI, Config->ServerName, ServerNameLength + 1);
+            }
         }
     }
 
@@ -2145,25 +2147,27 @@ CxPlatTlsProcessData(
 
 Exit:
 
-    if (!(TlsContext->ResultFlags & CXPLAT_TLS_RESULT_ERROR)) {
-        if (State->WriteKeys[QUIC_PACKET_KEY_HANDSHAKE] != NULL &&
-            State->BufferOffsetHandshake == 0) {
-            State->BufferOffsetHandshake = State->BufferTotalLength;
-            QuicTraceLogConnInfo(
-                OpenSslHandshakeDataStart,
-                TlsContext->Connection,
-                "Writing Handshake data starts at %u",
-                State->BufferOffsetHandshake);
-        }
-        if (State->WriteKeys[QUIC_PACKET_KEY_1_RTT] != NULL &&
-            State->BufferOffset1Rtt == 0) {
-            State->BufferOffset1Rtt = State->BufferTotalLength;
-            QuicTraceLogConnInfo(
-                OpenSsl1RttDataStart,
-                TlsContext->Connection,
-                "Writing 1-RTT data starts at %u",
-                State->BufferOffset1Rtt);
-        }
+    //
+    // Always set buffer offsets if keys have been installed to preserve code invariants.
+    // On error, the connection will be torn down anyway.
+    //
+    if (State->WriteKeys[QUIC_PACKET_KEY_HANDSHAKE] != NULL &&
+        State->BufferOffsetHandshake == 0) {
+        State->BufferOffsetHandshake = State->BufferTotalLength;
+        QuicTraceLogConnInfo(
+            OpenSslHandshakeDataStart,
+            TlsContext->Connection,
+            "Writing Handshake data starts at %u",
+            State->BufferOffsetHandshake);
+    }
+    if (State->WriteKeys[QUIC_PACKET_KEY_1_RTT] != NULL &&
+        State->BufferOffset1Rtt == 0) {
+        State->BufferOffset1Rtt = State->BufferTotalLength;
+        QuicTraceLogConnInfo(
+            OpenSsl1RttDataStart,
+            TlsContext->Connection,
+            "Writing 1-RTT data starts at %u",
+            State->BufferOffset1Rtt);
     }
 
     return TlsContext->ResultFlags;
@@ -2363,6 +2367,39 @@ CxPlatTlsParamGet(
     }
 
     return Status;
+}
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+QUIC_STATUS
+CxPlatTlsExportKeyingMaterial(
+    _In_ CXPLAT_TLS* TlsContext,
+    _In_z_ const char* Label,
+    _In_reads_bytes_opt_(ContextLength)
+        const uint8_t* Context,
+    _In_ uint32_t ContextLength,
+    _Out_writes_bytes_(OutputLength)
+        uint8_t* Output,
+    _In_ uint32_t OutputLength
+    )
+{
+    if (SSL_export_keying_material(
+            TlsContext->Ssl,
+            Output,
+            OutputLength,
+            Label,
+            strlen(Label),
+            Context,
+            ContextLength,
+            Context != NULL ? 1 : 0) != 1) {
+        QuicTraceEvent(
+            TlsError,
+            "[ tls][%p] ERROR, %s.",
+            TlsContext->Connection,
+            "SSL_export_keying_material failed");
+        return QUIC_STATUS_TLS_ERROR;
+    }
+
+    return QUIC_STATUS_SUCCESS;
 }
 
 _Success_(return==TRUE)

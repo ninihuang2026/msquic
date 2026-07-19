@@ -208,8 +208,8 @@ struct CxPlatHashTable {
 
 class CxPlatThread {
     CXPLAT_THREAD Thread {0};
-    bool Initialized : 1;
-    bool WaitOnDelete : 1;
+    bool Initialized{};
+    bool WaitOnDelete{};
 public:
     CxPlatThread(bool WaitOnDelete = true) noexcept : Initialized(false), WaitOnDelete(WaitOnDelete) { }
     ~CxPlatThread() noexcept {
@@ -1286,6 +1286,17 @@ struct MsQuicConnection {
         ) noexcept {
         return MsQuic->ConnectionSendResumptionTicket(Handle, Flags, DataLength, ResumptionData);
     }
+
+#ifdef QUIC_API_ENABLE_PREVIEW_FEATURES
+    QUIC_STATUS
+    ExportKeyingMaterial(
+        _In_ const QUIC_KEYING_MATERIAL_CONFIG* Config,
+        _Out_writes_bytes_(Config->OutputLength)
+            uint8_t* Output
+        ) noexcept {
+        return MsQuic->ConnectionExportKeyingMaterial(Handle, Config, Output);
+    }
+#endif // QUIC_API_ENABLE_PREVIEW_FEATURES
 
     QUIC_STATUS
     SetParam(
