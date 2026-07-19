@@ -949,35 +949,35 @@ CxPlatTlsAlpnSelectCallback(
         *OutLen = TlsContext->State->NegotiatedAlpn[0];
         *Out = TlsContext->State->NegotiatedAlpn + 1;
         return SSL_TLSEXT_ERR_OK;
-    } else {
-        const uint8_t* AlpnList =  TlsContext->AlpnBuffer;
-        uint16_t AlpnListLength = TlsContext->AlpnBufferLength;
-
-        //
-        // We want to respect the server's ALPN preference order (i.e. Listener) and
-        // not the client's. So we loop over every ALPN in the listener and then see
-        // if there is a match in the client's list.
-        //
-
-        while (AlpnListLength != 0) {
-            CXPLAT_ANALYSIS_ASSUME(AlpnList[0] + 1 <= AlpnListLength);
-            const uint8_t* Result =
-                CxPlatTlsAlpnFindInList(
-                    (uint16_t)InLen,
-                    In,
-                    AlpnList[0],
-                    AlpnList + 1);
-            if (Result != NULL) {
-                *Out = AlpnList + 1;
-                *OutLen = AlpnList[0];
-                TlsContext->State->NegotiatedAlpn = AlpnList;
-                return SSL_TLSEXT_ERR_OK;
-            }
-            AlpnListLength -= AlpnList[0] + 1;
-            AlpnList += AlpnList[0] + 1;
-        }
-        return SSL_TLSEXT_ERR_ALERT_FATAL;
     }
+
+    const uint8_t* AlpnList =  TlsContext->AlpnBuffer;
+    uint16_t AlpnListLength = TlsContext->AlpnBufferLength;
+
+    //
+    // We want to respect the server's ALPN preference order (i.e. Listener) and
+    // not the client's. So we loop over every ALPN in the listener and then see
+    // if there is a match in the client's list.
+    //
+
+    while (AlpnListLength != 0) {
+        CXPLAT_ANALYSIS_ASSUME(AlpnList[0] + 1 <= AlpnListLength);
+        const uint8_t* Result =
+            CxPlatTlsAlpnFindInList(
+                (uint16_t)InLen,
+                In,
+                AlpnList[0],
+                AlpnList + 1);
+        if (Result != NULL) {
+            *Out = AlpnList + 1;
+            *OutLen = AlpnList[0];
+            TlsContext->State->NegotiatedAlpn = AlpnList;
+            return SSL_TLSEXT_ERR_OK;
+        }
+        AlpnListLength -= AlpnList[0] + 1;
+        AlpnList += AlpnList[0] + 1;
+    }
+    return SSL_TLSEXT_ERR_ALERT_FATAL;
 }
 
 //
@@ -2459,9 +2459,15 @@ static long FreeBioAuxData(BIO *B, int Oper,
 
 static int Hexval(char c)
 {
-    if ('0' <= c && c <= '9') return c - '0';
-    if ('a' <= c && c <= 'f') return c - 'a' + 10;
-    if ('A' <= c && c <= 'F') return c - 'A' + 10;
+    if ('0' <= c && c <= '9') {
+        return c - '0';
+    }
+    if ('a' <= c && c <= 'f') {
+        return c - 'a' + 10;
+    }
+    if ('A' <= c && c <= 'F') {
+        return c - 'A' + 10;
+    }
     return -1;
 }
 
@@ -2472,8 +2478,9 @@ static int HexToBytes(const char *hex, uint8_t *out, size_t outlen)
     while (hex[0] && hex[1]) {
         int hi = Hexval(hex[0]);
         int lo = Hexval(hex[1]);
-        if (hi < 0 || lo < 0 || i >= outlen)
+        if (hi < 0 || lo < 0 || i >= outlen) {
             return -1;
+        }
 
         out[i++] = ((uint8_t)hi << 4) | (uint8_t)lo;
         hex += 2;
@@ -3773,8 +3780,6 @@ Handshake:
             int Err = SSL_get_error(TlsContext->Ssl, Ret);
             switch (Err) {
             case SSL_ERROR_WANT_READ:
-                break;
-
             case SSL_ERROR_WANT_WRITE:
                 break;
 
@@ -3935,11 +3940,10 @@ Send:
             }
             TlsContext->ResultFlags |= CXPLAT_TLS_RESULT_ERROR;
             break;
-        } else {
-            OutputBufferOffset += (size_t)Ret;
-            OutputBuffer->Length = (uint32_t)OutputBufferOffset;
-            TlsContext->ResultFlags |= CXPLAT_TLS_RESULT_DATA;
         }
+        OutputBufferOffset += (size_t)Ret;
+        OutputBuffer->Length = (uint32_t)OutputBufferOffset;
+        TlsContext->ResultFlags |= CXPLAT_TLS_RESULT_DATA;
     }
 
     for (uint32_t i = OutputBufferCount + 1; i < OutputBuffersCount; ++i) {
@@ -4039,7 +4043,8 @@ CxPlatTlsEncrypt(
                 "BIO_read failed, error: %d",
                 Err);
             return FALSE;
-        } else if (Ret == 0) {
+        }
+        if (Ret == 0) {
             break;
         }
         Offset += (size_t)Ret;
@@ -4091,19 +4096,18 @@ CxPlatTlsDecrypt(
         if (Ret < 0) {
             int Err = SSL_get_error(TlsContext->Ssl, Ret);
 
-            if (Err == SSL_ERROR_WANT_READ || Err == SSL_ERROR_WANT_WRITE) {
+            if (Err == SSL_ERROR_WANT_READ ||
+                Err == SSL_ERROR_WANT_WRITE ||
+                Err == SSL_ERROR_ZERO_RETURN) {
                 break;
-            } else if (Err == SSL_ERROR_ZERO_RETURN) {
-                break;
-            } else {
-                QuicTraceLogConnError(
-                    OpenSslSSLReadError,
-                    TlsContext->Connection,
-                    "SSL_read failed, error: %d",
-                    Err);
-                Result |= CXPLAT_TLS_RESULT_ERROR;
-                return Result;
             }
+            QuicTraceLogConnError(
+                OpenSslSSLReadError,
+                TlsContext->Connection,
+                "SSL_read failed, error: %d",
+                Err);
+            Result |= CXPLAT_TLS_RESULT_ERROR;
+            return Result;
         }
         OutputBufferOffset += (size_t)Ret;
     } while (Ret > 0 && OutputBufferOffset < *OutputBufferLength);
