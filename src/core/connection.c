@@ -805,7 +805,11 @@ QuicConnLogPathIDStatistics(
                 QuicPathIDLogStatistics(Connection->Paths[i].PathID);
             }
         }
-    } else {
+    } else if (Connection->Paths[0].PathID != NULL) {
+        //
+        // QMux connections never allocate a PathID, so there are no per-path
+        // statistics to log for them.
+        //
         QuicPathIDLogStatistics(Connection->Paths[0].PathID);
     }
 }
