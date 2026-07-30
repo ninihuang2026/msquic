@@ -128,7 +128,7 @@ QuicConnAlloc(
     QuicOperationQueueInitialize(&Connection->OperQ);
     QuicSendInitialize(&Connection->Send, &Connection->Settings);
     QuicPathIDSetInitialize(&Connection->PathIDs);
-    QuicDatagramInitialize(&Connection->Datagram);
+    QuicDatagramInitialize(&Connection->Datagram, IsServer);
     QuicRangeInitialize(
         QUIC_MAX_RANGE_DECODE_ACKS,
         &Connection->DecodedAckRanges);
@@ -374,7 +374,7 @@ QuicConnQMuxAlloc(
     QuicSendBufferInitialize(&Connection->SendBuffer);
     QuicOperationQueueInitialize(&Connection->OperQ);
     QuicSendInitialize(&Connection->Send, &Connection->Settings);
-    QuicDatagramInitialize(&Connection->Datagram);
+    QuicDatagramInitialize(&Connection->Datagram, IsServer);
 
     Connection->EarliestExpirationTime = UINT64_MAX;
     for (QUIC_CONN_TIMER_TYPE Type = 0; Type < QUIC_CONN_TIMER_COUNT; ++Type) {
@@ -1863,6 +1863,39 @@ QuicConnStart(
         goto Exit;
     }
 
+    if (Connection->State.UnconnectedSocket) {
+        if (!Connection->State.ShareBinding) {
+            //
+            // Setting the parameter requires a shared binding, so this only
+            // catches a binding that was un-shared afterwards.
+            //
+            Status = QUIC_STATUS_INVALID_STATE;
+            QuicTraceEvent(
+                ConnError,
+                "[conn][%p] ERROR, %s.",
+                Connection,
+                "Unconnected socket requires a shared binding");
+            goto Exit;
+        }
+
+        if (!Connection->State.LocalAddressSet ||
+            QuicAddrIsWildCard(&Path->Route.LocalAddress)) {
+            //
+            // A connected socket takes its source address from the kernel when
+            // it is connected. An unconnected one does not, and the first packet
+            // goes out before anything has been learned from the peer, so the
+            // application has to name the address to send from.
+            //
+            Status = QUIC_STATUS_INVALID_STATE;
+            QuicTraceEvent(
+                ConnError,
+                "[conn][%p] ERROR, %s.",
+                Connection,
+                "Unconnected socket requires a specific local address");
+            goto Exit;
+        }
+    }
+
     QuicAddrSetPort(RemoteAddress, ServerPort);
     QuicTraceEvent(
         ConnRemoteAddrAdded,
@@ -1873,7 +1906,11 @@ QuicConnStart(
     if (!QuicConnIsQMux(Connection)) {
         CXPLAT_UDP_CONFIG UdpConfig = {0};
         UdpConfig.LocalAddress = Connection->State.LocalAddressSet ? &Path->Route.LocalAddress : NULL;
-        UdpConfig.RemoteAddress = &Path->Route.RemoteAddress;
+        //
+        // Passing no remote address leaves the socket unconnected, which is what
+        // lets a single binding carry connections to different remote addresses.
+        //
+        UdpConfig.RemoteAddress = Connection->State.UnconnectedSocket ? NULL : &Path->Route.RemoteAddress;
         UdpConfig.Flags = CXPLAT_SOCKET_FLAG_NONE;
         UdpConfig.InterfaceIndex = Connection->State.LocalInterfaceSet ? (uint32_t)Path->Route.LocalAddress.Ipv6.sin6_scope_id : 0; // NOLINT(google-readability-casting)
         UdpConfig.PartitionIndex = QuicPartitionIdGetIndex(Connection->PartitionID);
@@ -2797,21 +2834,21 @@ QuicConnSetConfiguration(
         "[conn][%p] Handshake start",
         Connection);
 
-    //
-    // Re-evaluate the datagram send state now that the connection is started
-    // and owned by the application.
-    //
-    // `Started` is an input to the max send length (QuicDatagramOnSendStateChanged
-    // derives it from QUIC_DPLPMTUD_MIN_MTU until then, and from the path's MTU
-    // afterwards), so it has to be recomputed here regardless. For a server this
-    // is also the first evaluation with an owner to indicate to: the peer's
-    // transport parameters are processed before the listener hands the
-    // connection over, so nothing before this point could reach the application.
-    //
-    // Clients reach this path before any peer transport parameters exist, so
-    // their behaviour is unchanged.
-    //
-    QuicDatagramOnSendStateChanged(&Connection->Datagram);
+    if (QuicConnIsServer(Connection)) {
+        //
+        // Evaluate the datagram send state for a server. This is the first
+        // point at which both of its inputs are settled and there is an
+        // external owner to indicate the result to: the peer's transport
+        // parameters are processed before the listener hands the connection to
+        // the application, and `Started` selects the MTU that the max send
+        // length is derived from.
+        //
+        // A client's send state is evaluated once its peer's transport
+        // parameters arrive, which is always after it has an owner, so it needs
+        // nothing here.
+        //
+        QuicDatagramOnSendStateChanged(&Connection->Datagram);
+    }
 
     if (!QuicConnIsQMux(Connection)) {
         Status =
@@ -7404,9 +7441,9 @@ QuicConnOpenNewPaths(
 // address to be registered. It enforces uniqueness of bound addresses per
 // connection, ensures the per-connection bound-address limit is not exceeded,
 // allocates and stores a new bound-address entry, and creates a corresponding
-// UDP binding using the connection's partition. The local binding is always
-// created with an IPv6 family; if the caller does not specify a port, an
-// ephemeral port is used.
+// UDP binding using the connection's partition. The binding is created on the
+// address the caller named; if the caller does not specify a port, an ephemeral
+// port is used and the address stored on the connection is updated with it.
 //
 _IRQL_requires_max_(PASSIVE_LEVEL)
 static
@@ -7466,9 +7503,8 @@ QuicConnAddBoundAddress(
 
     QUIC_BOUND_ADDRESS_LIST_ENTRY* Bound =
     //
-    // Construct the local address used for the UDP binding. The family is
-    // always set to IPv6; the port is copied from the caller when specified,
-    // otherwise an ephemeral port is requested by passing zero.
+    // The caller's address is used for the UDP binding as given. A zero port
+    // requests an ephemeral one, which is read back off the binding below.
     //
         (QUIC_BOUND_ADDRESS_LIST_ENTRY*)
         CXPLAT_ALLOC_NONPAGED(
@@ -7487,13 +7523,9 @@ QuicConnAddBoundAddress(
     CxPlatCopyMemory(&Bound->Address, Param, sizeof(QUIC_ADDR));
 
     BOOLEAN PortUnspecified = QuicAddrGetPort(Param) == 0;
-    QUIC_ADDR BindingLocalAddress = {0};
-    QuicAddrSetFamily(&BindingLocalAddress, QUIC_ADDRESS_FAMILY_INET6);
-    QuicAddrSetPort(&BindingLocalAddress,
-        PortUnspecified ? 0 : QuicAddrGetPort(Param));
 
     CXPLAT_UDP_CONFIG UdpConfig = {0};
-    UdpConfig.LocalAddress = &BindingLocalAddress;
+    UdpConfig.LocalAddress = Param;
     UdpConfig.RemoteAddress = NULL;
     UdpConfig.Flags = CXPLAT_SOCKET_FLAG_NONE;
     UdpConfig.InterfaceIndex = 0;
@@ -7526,6 +7558,7 @@ QuicConnAddBoundAddress(
     }
  
     if (PortUnspecified) {
+        QUIC_ADDR BindingLocalAddress = {0};
         QuicBindingGetLocalAddress(Bound->Binding, &BindingLocalAddress);
         QuicAddrSetPort(
             &Bound->Address,
@@ -8517,7 +8550,8 @@ QuicConnParamSet(
 
             CXPLAT_UDP_CONFIG UdpConfig = {0};
             UdpConfig.LocalAddress = LocalAddress;
-            UdpConfig.RemoteAddress = &Connection->Paths[0].Route.RemoteAddress;
+            UdpConfig.RemoteAddress =
+                Connection->State.UnconnectedSocket ? NULL : &Connection->Paths[0].Route.RemoteAddress;
             UdpConfig.Flags = CXPLAT_SOCKET_FLAG_NONE;
             UdpConfig.InterfaceIndex = 0;
 #ifdef QUIC_COMPARTMENT_ID
@@ -8699,6 +8733,43 @@ QuicConnParamSet(
 
         Status = QUIC_STATUS_SUCCESS;
         break;
+
+#ifdef QUIC_API_ENABLE_PREVIEW_FEATURES
+    case QUIC_PARAM_CONN_UNCONNECTED_UDP_SOCKET:
+
+        if (BufferLength != sizeof(uint8_t)) {
+            Status = QUIC_STATUS_INVALID_PARAMETER;
+            break;
+        }
+
+        if (QUIC_CONN_BAD_START_STATE(Connection) ||
+            QuicConnIsServer(Connection)) {
+            Status = QUIC_STATUS_INVALID_STATE;
+            break;
+        }
+
+        if (*(uint8_t*)Buffer && !Connection->State.ShareBinding) {
+            //
+            // An unconnected socket receives datagrams from any remote address,
+            // so the connection has to be identifiable by its connection ID
+            // alone. That is only true when the binding is shared, which is what
+            // gives the connection a non-zero length source connection ID.
+            //
+            Status = QUIC_STATUS_INVALID_STATE;
+            break;
+        }
+
+        Connection->State.UnconnectedSocket = *(uint8_t*)Buffer;
+
+        QuicTraceLogConnInfo(
+            UpdateUnconnectedSocket,
+            Connection,
+            "Updated UnconnectedSocket = %hhu",
+            Connection->State.UnconnectedSocket);
+
+        Status = QUIC_STATUS_SUCCESS;
+        break;
+#endif
 
     case QUIC_PARAM_CONN_CLOSE_REASON_PHRASE:
 
@@ -9650,6 +9721,27 @@ QuicConnParamGet(
 
         Status = QUIC_STATUS_SUCCESS;
         break;
+
+#ifdef QUIC_API_ENABLE_PREVIEW_FEATURES
+    case QUIC_PARAM_CONN_UNCONNECTED_UDP_SOCKET:
+
+        if (*BufferLength < sizeof(uint8_t)) {
+            *BufferLength = sizeof(uint8_t);
+            Status = QUIC_STATUS_BUFFER_TOO_SMALL;
+            break;
+        }
+
+        if (Buffer == NULL) {
+            Status = QUIC_STATUS_INVALID_PARAMETER;
+            break;
+        }
+
+        *BufferLength = sizeof(uint8_t);
+        *(uint8_t*)Buffer = Connection->State.UnconnectedSocket;
+
+        Status = QUIC_STATUS_SUCCESS;
+        break;
+#endif
 
     case QUIC_PARAM_CONN_LOCAL_BIDI_STREAM_COUNT:
         Type =
