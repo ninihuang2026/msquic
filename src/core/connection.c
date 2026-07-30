@@ -8029,6 +8029,16 @@ QuicConnSendPunchProbe(
     QuicPathInitialize(Connection, &TempPath);
     TempPath.Allowance = UINT32_MAX;
 
+    BOOLEAN FatalError = FALSE;
+    TempPath.PathID = QuicPathIDSetGetPathIDForPeer(
+        &Connection->PathIDs,
+        Connection->Paths[0].PathID->ID,
+        FALSE,
+        &FatalError);
+    if (TempPath.PathID == NULL) {
+        goto Done;
+    }
+
     CxPlatCopyMemory(&TempPath.Route.LocalAddress, &Bound->Address, sizeof(QUIC_ADDR));
     CxPlatCopyMemory(&TempPath.Route.RemoteAddress, RemoteAddress, sizeof(QUIC_ADDR));
 
@@ -8071,6 +8081,9 @@ Done:
     }
     if (TempPath.Binding != NULL) {
         QuicLibraryReleaseBinding(TempPath.Binding);
+    }
+    if (TempPath.PathID != NULL) {
+        QuicPathIDRelease(TempPath.PathID, QUIC_PATHID_REF_LOOKUP);
     }
 #pragma warning(pop)
 }
