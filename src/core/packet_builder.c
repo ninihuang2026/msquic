@@ -1387,13 +1387,35 @@ QuicPacketBuilderQMuxFinalize(
                 CXPLAT_FREE(QMux->EarlyDataBuffer, QUIC_POOL_QMUX_EARLY_DATA_BUFFER);
             }
             QMux->EarlyDataBuffer = NewEarlyDataBuffer;
+            QMux->EarlyDataBufferAllocLength = NewEarlyDataBufferAllocLength;
         }
         CXPLAT_DBG_ASSERT(QMux->EarlyDataBuffer != NULL);
+
+        //
+        // The record is a QUIC packet plus its length prefix, so it is bounded
+        // by the datagram it was built in. Spelling that out keeps the static
+        // analyzer from deriving a bound for it from the comparisons inside
+        // QuicVarIntSize above, which it otherwise reads as permitting a
+        // payload far larger than the uint16_t it is held in.
+        //
+        const uint32_t RecordLength = (uint32_t)PayloadLength + QMuxRecordLength;
+        CXPLAT_DBG_ASSERT(RecordLength <= UINT16_MAX + 2);
+        CXPLAT_ANALYSIS_ASSUME(RecordLength <= UINT16_MAX + 2);
+
+        //
+        // The loop above grew the buffer until RequiredLength fit, and
+        // RequiredLength covers everything already buffered plus this record.
+        //
+        CXPLAT_DBG_ASSERT(
+            QMux->EarlyDataBufferLength + RecordLength <= QMux->EarlyDataBufferAllocLength);
+        CXPLAT_ANALYSIS_ASSUME(
+            QMux->EarlyDataBufferLength + RecordLength <= QMux->EarlyDataBufferAllocLength);
+
         CxPlatCopyMemory(
             QMux->EarlyDataBuffer + QMux->EarlyDataBufferLength,
             Header + 5,
-            PayloadLength + QMuxRecordLength);
-        QMux->EarlyDataBufferLength += PayloadLength + QMuxRecordLength;
+            RecordLength);
+        QMux->EarlyDataBufferLength += RecordLength;
 
         //
         // Allocate a copy of the packet metadata.
