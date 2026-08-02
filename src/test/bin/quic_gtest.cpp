@@ -1107,6 +1107,15 @@ TEST_P(WithFamilyArgs, UnconnectedSocketAddPathAfterStart) {
     }
 }
 
+TEST_P(WithFamilyArgs, SharedBindingPathRemoval) {
+    TestLoggerT<ParamType> Logger("QuicTestSharedBindingPathRemoval", GetParam());
+    if (TestingKernelMode) {
+        ASSERT_TRUE(InvokeKernelTest(FUNC(QuicTestSharedBindingPathRemoval), GetParam()));
+    } else {
+        QuicTestSharedBindingPathRemoval(GetParam());
+    }
+}
+
 TEST(Basic, UnconnectedSocketRequirements) {
     TestLogger Logger("QuicTestUnconnectedSocketRequirements");
     if (TestingKernelMode) {
@@ -3083,6 +3092,15 @@ TEST(Misc, StreamAbortRecvFinRace) {
         ASSERT_TRUE(InvokeKernelTest(FUNC(QuicTestStreamAbortRecvFinRace)));
     } else {
         QuicTestStreamAbortRecvFinRace();
+    }
+}
+
+TEST(Misc, StreamReceiveCompleteWithNoPendingReceive) {
+    TestLogger Logger("StreamReceiveCompleteWithNoPendingReceive");
+    if (TestingKernelMode) {
+        ASSERT_TRUE(InvokeKernelTest(FUNC(QuicTestStreamReceiveCompleteWithNoPendingReceive)));
+    } else {
+        QuicTestStreamReceiveCompleteWithNoPendingReceive();
     }
 }
 

@@ -524,6 +524,7 @@ ExecuteTestRequest(
     RegisterTestFunction(QuicTestUnconnectedSocketRequirements);
     RegisterTestFunction(QuicTestUnconnectedSocketAddPathBeforeStart);
     RegisterTestFunction(QuicTestUnconnectedSocketAddPathAfterStart);
+    RegisterTestFunction(QuicTestSharedBindingPathRemoval);
 #endif
     RegisterTestFunction(QuicTestConnect_Connect);
 #ifndef QUIC_DISABLE_RESUMPTION
@@ -663,6 +664,7 @@ ExecuteTestRequest(
     RegisterTestFunction(QuicTestStreamPriorityInfiniteLoop);
     RegisterTestFunction(QuicTestStreamDifferentAbortErrors);
     RegisterTestFunction(QuicTestStreamAbortRecvFinRace);
+    RegisterTestFunction(QuicTestStreamReceiveCompleteWithNoPendingReceive);
 #ifdef QUIC_PARAM_STREAM_RELIABLE_OFFSET
     RegisterTestFunction(QuicTestStreamReliableReset);
     RegisterTestFunction(QuicTestStreamReliableResetMultipleSends);

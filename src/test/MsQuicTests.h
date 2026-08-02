@@ -160,6 +160,7 @@ void QuicTestConnectUnconnectedSocket(const FamilyArgs& Params);
 void QuicTestUnconnectedSocketRequirements();
 void QuicTestUnconnectedSocketAddPathBeforeStart(const FamilyArgs& Params);
 void QuicTestUnconnectedSocketAddPathAfterStart(const FamilyArgs& Params);
+void QuicTestSharedBindingPathRemoval(const FamilyArgs& Params);
 #endif
 
 //
@@ -996,6 +997,10 @@ QuicTestStreamDifferentAbortErrors(
 
 void
 QuicTestStreamAbortRecvFinRace(
+    );
+
+void
+QuicTestStreamReceiveCompleteWithNoPendingReceive(
     );
 
 void
