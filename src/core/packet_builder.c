@@ -1560,6 +1560,8 @@ QuicPacketBuilderSendBatch(
         Builder->TotalDatagramsLength,
         Builder->TotalCountDatagrams);
 
+    Builder->Path->LastSendTimeUs = CxPlatTimeUs64();
+
     Builder->PacketBatchSent = TRUE;
     Builder->SendData = NULL;
     Builder->TotalDatagramsLength = 0;

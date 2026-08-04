@@ -706,6 +706,11 @@ QuicTestQMuxKeepAlive(
 #endif // QUIC_API_ENABLE_PREVIEW_FEATURES
 
 void
+QuicTestPathKeepAlive(
+    _In_ const FamilyArgs& Params
+    );
+
+void
 QuicTestNatPortRebind(
     _In_ int Family,
     _In_ uint16_t KeepAlivePaddingSize
