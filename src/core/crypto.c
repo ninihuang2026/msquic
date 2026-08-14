@@ -487,10 +487,12 @@ QuicCryptoHandshakeConfirmed(
 {
     QUIC_CONNECTION* Connection = QuicCryptoGetConnection(Crypto);
 
+    // NOLINTBEGIN(clang-analyzer-security.ArrayBound): False positive: embedded Crypto is valid.
     if (Connection->State.HandshakeConfirmed) {
         return;
     }
     Connection->State.HandshakeConfirmed = TRUE;
+    // NOLINTEND(clang-analyzer-security.ArrayBound)
 
     if (SignalBinding) {
         QUIC_PATH* Path = &Connection->Paths[0];

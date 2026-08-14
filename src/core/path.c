@@ -171,6 +171,7 @@ QuicPathRemove(
         }
     }
     Connection->PathsCount--;
+    // NOLINTNEXTLINE(clang-analyzer-security.ArrayBound): False positive: new index is valid.
     Connection->Paths[Connection->PathsCount].InUse = FALSE;
     return TRUE;
 }
