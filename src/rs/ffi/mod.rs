@@ -46,7 +46,10 @@ pub struct OVERLAPPED_ENTRY {
     pub dwNumberOfBytesTransferred: ::std::os::raw::c_ulong,
 }
 
-#[cfg(target_os = "linux")]
+// target_os is "android" (not "linux") for Android, even though it runs a
+// Linux kernel with the same epoll support -- the libc crate defines
+// epoll_event there too, under the same name.
+#[cfg(any(target_os = "linux", target_os = "android"))]
 pub type epoll_event = libc::epoll_event;
 
 // iOS shares the darwin platform layer (kqueue, not epoll) with macOS, so it

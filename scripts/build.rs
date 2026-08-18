@@ -31,6 +31,7 @@ fn cmake_build() {
 
     let target = env::var("TARGET").unwrap().replace("\\", "/");
     let apple_ios = target.contains("-apple-ios");
+    let android = target == "aarch64-linux-android";
     let out_dir = env::var("OUT_DIR").unwrap();
     // The output directory for the native MsQuic library.
     let quic_output_dir = if cfg!(windows) {
@@ -88,7 +89,7 @@ fn cmake_build() {
         config.define("QUIC_TLS_LIB", "quictls");
     }
 
-    if cfg!(feature = "static") || apple_ios {
+    if cfg!(feature = "static") || apple_ios || android {
         config.define("QUIC_BUILD_SHARED", "off");
     }
 
@@ -127,6 +128,53 @@ fn cmake_build() {
             .define("CMAKE_CXX_FLAGS", "");
     }
 
+    // Android (arm64-v8a only, so far): the host running this build may not
+    // be x86_64 (Google's NDK toolchain binaries are linux-x86_64 only), so
+    // route through a custom toolchain file that uses the host's own native
+    // clang against the NDK's sysroot instead of the NDK's bundled clang.
+    // See cmake/toolchains/android-aarch64.cmake for the full rationale.
+    if android {
+        let ndk_root = env::var("ANDROID_NDK_ROOT").expect(
+            "ANDROID_NDK_ROOT must be set to the Android NDK path for an aarch64-linux-android build",
+        );
+        let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
+        let toolchain_file = Path::new(&manifest_dir)
+            .join("cmake")
+            .join("toolchains")
+            .join("android-aarch64.cmake");
+        let platform_level =
+            env::var("ANDROID_PLATFORM_LEVEL").unwrap_or_else(|_| "24".to_string());
+        // quictls/OpenSSL's own Configure script (a sub-build CMake shells
+        // out to) does its own independent Android toolchain discovery that
+        // needs the NDK's toolchain bin/ directory to appear in PATH. But
+        // prepending it to the *whole* build's PATH (e.g. by exporting it
+        // before running cargo) leaks into every other build script in this
+        // same cargo invocation too -- including ones that must run natively
+        // on this host (e.g. camino's), which then get linked with the
+        // NDK's own non-executable-here `ld` by mistake, since it shadows
+        // the plain `ld`/`clang` names those host tools resolve via PATH.
+        // Scoping it to just this crate's cmake invocation (and everything
+        // it spawns, including OpenSSL's Configure) via cmake-rs's per-call
+        // .env() avoids that entirely -- the enclosing cargo process and
+        // every other build script keep the caller's original PATH.
+        let ndk_bin_dir =
+            Path::new(&ndk_root).join("toolchains/llvm/prebuilt/linux-x86_64/bin");
+        let scoped_path = format!(
+            "{}:{}",
+            ndk_bin_dir.to_str().unwrap(),
+            env::var("PATH").unwrap_or_default()
+        );
+        config
+            .define("CMAKE_TOOLCHAIN_FILE", toolchain_file.to_str().unwrap())
+            .define("ANDROID_NDK_ROOT", &ndk_root)
+            .define("ANDROID_PLATFORM_LEVEL", &platform_level)
+            // Let the toolchain file own the compiler flags, same reasoning
+            // as the iOS block above.
+            .define("CMAKE_C_FLAGS", "")
+            .define("CMAKE_CXX_FLAGS", "")
+            .env("PATH", scoped_path);
+    }
+
     // macos-latest's cargo automatically specify --target=${ARCH}-apple-macosx14.5
     // which conflicts with -mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}.
     // Different value than 14.5 will cause the build to fail.
@@ -157,13 +205,17 @@ fn cmake_build() {
     if !found_lib_dir {
         panic!("no lib or lib64 directory found under {}", dst.display());
     }
-    if cfg!(feature = "static") || apple_ios {
+    if cfg!(feature = "static") || apple_ios || android {
         // Keyed off the target rather than the host: cross-compiling to iOS
         // happens from a macOS host, so `cfg!` would not tell them apart.
         if target.contains("-apple-") {
             // These back the darwin platform layer on macOS and iOS alike.
             println!("cargo:rustc-link-lib=framework=CoreFoundation");
             println!("cargo:rustc-link-lib=framework=Security");
+        } else if android {
+            // No extra platform libs needed here (unlike desktop Linux's
+            // numa/atomic below): bionic doesn't have libnuma, and the
+            // objects are already built entirely against the NDK sysroot.
         } else if cfg!(target_os = "linux") {
             let numa_lib_path = match target.as_str() {
                 "x86_64-unknown-linux-gnu" => "/usr/lib/x86_64-linux-gnu",
